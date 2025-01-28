@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 
-#include <doctest/doctest.h>
+#include <catch2/catch_all.hpp>
 
 #include "mambatests.hpp"
 
@@ -19,22 +19,22 @@
 #include <unistd.h>
 #endif
 
-#include "mamba/core/channel.hpp"
+#include "mamba/core/channel_context.hpp"
 #include "mamba/core/history.hpp"
 
-#include "test_data.hpp"
+#include "mambatests.hpp"
 
 namespace mamba
 {
-    TEST_SUITE("history")
+    namespace
     {
-        TEST_CASE("parse")
+        TEST_CASE("History parse")
         {
             static const auto history_file_path = fs::absolute(
-                test_data_dir / "history/parse/conda-meta/history"
+                mambatests::test_data_dir / "history/parse/conda-meta/history"
             );
             static const auto aux_file_path = fs::absolute(
-                test_data_dir / "history/parse/conda-meta/aux_file"
+                mambatests::test_data_dir / "history/parse/conda-meta/aux_file"
             );
 
             // Backup history file and restore it at the end of the test, whatever the output.
@@ -45,6 +45,7 @@ namespace mamba
                     fs::remove(aux_file_path);
                     fs::copy(history_file_path, aux_file_path);
                 }
+
                 ~ScopedHistoryFileBackup()
                 {
                     fs::remove(history_file_path);
@@ -52,10 +53,10 @@ namespace mamba
                 }
             } scoped_history_file_backup;
 
-            ChannelContext channel_context{ mambatests::context() };
+            auto channel_context = ChannelContext::make_conda_compatible(mambatests::context());
 
             // Gather history from current history file.
-            History history_instance(test_data_dir / "history/parse", channel_context);
+            History history_instance(mambatests::test_data_dir / "history/parse", channel_context);
             std::vector<History::UserRequest> user_reqs = history_instance.get_user_requests();
 
             // Extract raw history file content into buffer.
@@ -89,14 +90,26 @@ namespace mamba
             }
             history_file.close();
 
-            REQUIRE_EQ(updated_history_buffer.str(), check_buffer.str());
+            REQUIRE(updated_history_buffer.str() == check_buffer.str());
+        }
+
+        TEST_CASE("parse_metadata")
+        {
+            auto channel_context = ChannelContext::make_conda_compatible(mambatests::context());
+
+            History history_instance(
+                mambatests::test_data_dir / "history/parse_metadata",
+                channel_context
+            );
+            // Must not throw
+            std::vector<History::UserRequest> user_reqs = history_instance.get_user_requests();
         }
 
 #ifndef _WIN32
         TEST_CASE("parse_segfault")
         {
             pid_t child = fork();
-            ChannelContext channel_context{ mambatests::context() };
+            auto channel_context = ChannelContext::make_conda_compatible(mambatests::context());
             if (child)
             {
                 int wstatus;

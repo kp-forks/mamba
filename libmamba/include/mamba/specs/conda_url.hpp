@@ -10,6 +10,7 @@
 #include <functional>
 #include <string_view>
 
+#include "mamba/specs/error.hpp"
 #include "mamba/specs/platform.hpp"
 #include "mamba/util/url.hpp"
 
@@ -28,14 +29,14 @@ namespace mamba::specs
 
         inline static constexpr std::string_view token_prefix = "/t/";
 
-        [[nodiscard]] static auto parse(std::string_view url) -> CondaURL;
+        [[nodiscard]] static auto parse(std::string_view url) -> expected_parse_t<CondaURL>;
 
         /** Create a local URL. */
         CondaURL() = default;
         explicit CondaURL(util::URL&& url);
         explicit CondaURL(const util::URL& url);
 
-        auto base() const -> const util::URL&;
+        [[nodiscard]] auto generic() const -> const util::URL&;
 
         using Base::scheme_is_defaulted;
         using Base::scheme;
@@ -104,7 +105,7 @@ namespace mamba::specs
          */
         void append_path(std::string_view path, Encode::no_type);
 
-        /** Return wether a token is set. */
+        /** Return whether a token is set. */
         [[nodiscard]] auto has_token() const -> bool;
 
         /** Return the Conda token, as delimited with "/t/", or empty if there isn't any. */
@@ -114,7 +115,7 @@ namespace mamba::specs
          * Set a token.
          *
          * If the URL already contains one replace it at the same location, otherwise, add it at
-         * the begining of the path.
+         * the beginning of the path.
          */
         void set_token(std::string_view token);
 
@@ -145,7 +146,7 @@ namespace mamba::specs
         auto clear_path_without_token() -> bool;
 
         /** Return the platform if part of the URL path. */
-        [[nodiscard]] auto platform() const -> std::optional<Platform>;
+        [[nodiscard]] auto platform() const -> std::optional<KnownPlatform>;
 
         /**
          * Return the platform if part of the URL path, or empty.
@@ -156,7 +157,7 @@ namespace mamba::specs
         [[nodiscard]] auto platform_name() const -> std::string_view;
 
         /** Set the platform if the URL already contains one, or throw an error. */
-        void set_platform(Platform platform);
+        void set_platform(KnownPlatform platform);
 
         /**
          * Set the platform if the URL already contains one, or throw an error.
@@ -207,7 +208,7 @@ namespace mamba::specs
         auto clear_package() -> bool;
 
         /** Return the full, exact, encoded URL. */
-        [[nodiscard]] auto str(Credentials credentials = Credentials::Show) const -> std::string;
+        [[nodiscard]] auto str(Credentials credentials = Credentials::Hide) const -> std::string;
 
         /**
          * Return the full decoded url.
@@ -215,14 +216,14 @@ namespace mamba::specs
          * Due to decoding, the outcome may not be understood by parser and usable to reach an
          * asset.
          * @param strip_scheme If true, remove the scheme and "localhost" on file URI.
-         * @param rstrip_path If non-null, remove the given charaters at the end of the path.
+         * @param rstrip_path If non-null, remove the given characters at the end of the path.
          * @param credentials If true, hide password and tokens in the decoded string.
          * @param credentials Decide to keep, remove, or hide passwrd, users, and token.
          */
         [[nodiscard]] auto pretty_str(
             StripScheme strip_scheme = StripScheme::no,
             char rstrip_path = 0,
-            Credentials credentials = Credentials::Show
+            Credentials credentials = Credentials::Hide
         ) const -> std::string;
 
 
@@ -241,6 +242,11 @@ namespace mamba::specs
     /** A functional equivalent to ``CondaURL::append_path``. */
     auto operator/(const CondaURL& url, std::string_view subpath) -> CondaURL;
     auto operator/(CondaURL&& url, std::string_view subpath) -> CondaURL;
+
+    namespace conda_url_literals
+    {
+        auto operator""_cu(const char* str, std::size_t len) -> CondaURL;
+    }
 }
 
 template <>

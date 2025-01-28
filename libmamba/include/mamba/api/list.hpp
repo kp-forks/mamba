@@ -13,17 +13,9 @@ namespace mamba
 {
     class ChannelContext;
     class Configuration;
+    class Context;
 
     void list(Configuration& config, const std::string& regex);
-
-    namespace detail
-    {
-        void list_packages(std::string regex, ChannelContext& channel_context);
-
-        struct formatted_pkg;
-
-        bool compare_alphabetically(const formatted_pkg& a, const formatted_pkg& b);
-    }
 }
 
 #endif

@@ -35,17 +35,27 @@ namespace mamba
 {
     std::string cut_repo_name(std::string_view url_str)
     {
-        auto url = specs::CondaURL::parse(url_str);
-        url.clear_token();
-        if ((url.host() == "conda.anaconda.org") || (url.host() == "repo.anaconda.com"))
-        {
-            std::string out = url.clear_path();
-            out = util::strip(out, '/');
-            return out;
-        }
-        url.clear_user();
-        url.clear_password();
-        return url.pretty_str(specs::CondaURL::StripScheme::yes, '/');
+        return specs::CondaURL::parse(url_str)
+            .transform(
+                [](specs::CondaURL&& url)
+                {
+                    url.clear_token();
+                    if ((url.host() == "conda.anaconda.org") || (url.host() == "repo.anaconda.com"))
+                    {
+                        std::string out = url.clear_path();
+                        out = util::strip(out, '/');
+                        return out;
+                    }
+                    url.clear_user();
+                    url.clear_password();
+                    return url.pretty_str(specs::CondaURL::StripScheme::yes, '/');
+                }
+            )
+            .or_else(
+                [&](const auto&) -> specs::expected_parse_t<std::string>
+                { return { std::string(url_str) }; }
+            )
+            .value();
     }
 
     /***********
@@ -312,12 +322,10 @@ namespace mamba
         clear_singleton();
     }
 
-
     const Context& Console::context() const
     {
         return p_data->m_context;
     }
-
 
     ConsoleStream Console::stream()
     {
@@ -464,17 +472,6 @@ namespace mamba
         return *(p_data->p_progress_bar_manager);
     }
 
-    std::string strip_file_prefix(const std::string& file)
-    {
-#ifdef _WIN32
-        char sep = '\\';
-#else
-        char sep = '/';
-#endif
-        size_t pos = file.rfind(sep);
-        return pos != std::string::npos ? file.substr(pos + 1, std::string::npos) : file;
-    }
-
     void Console::json_print()
     {
         print(p_data->json_log.unflatten().dump(4), true);
@@ -549,17 +546,15 @@ namespace mamba
         static std::vector<std::pair<std::string, log_level>> m_buffer;
     };
 
-    MessageLogger::MessageLogger(const char* file, int line, log_level level)
-        : m_file(strip_file_prefix(file))
-        , m_line(line)
-        , m_level(level)
+    MessageLogger::MessageLogger(log_level level)
+        : m_level(level)
         , m_stream()
     {
     }
 
     MessageLogger::~MessageLogger()
     {
-        if (!MessageLoggerData::use_buffer)
+        if (!MessageLoggerData::use_buffer && Console::is_available())
         {
             emit(m_stream.str(), m_level);
         }

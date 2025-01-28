@@ -21,7 +21,7 @@ namespace mamba::util
      * any kind of binary directed acyclic graph (e.g. there can be multiple trees,
      * or nodes could have multiple parents)
      *
-     * For efficency (and simplicity), this data structure can currenlty only grow.
+     * For efficiency (and simplicity), this data structure can currently only grow.
      * The tree must also be grown from the leaves, adding children first and their
      * parents afterwards.
      */
@@ -32,12 +32,27 @@ namespace mamba::util
 
         using branch_type = Branch;
         using leaf_type = Leaf;
+
         struct branch_node
         {
             branch_type data;
             std::size_t left_child = 0;
             std::size_t right_child = 0;
+
+            // TODO(C++20): replace by the `= default` implementation of `operator==`
+            [[nodiscard]] auto operator==(const branch_node& other) const -> bool
+            {
+                return data == other.data                 //
+                       && left_child == other.left_child  //
+                       && right_child == other.right_child;
+            }
+
+            [[nodiscard]] auto operator!=(const branch_node& other) const -> bool
+            {
+                return !(*this == other);
+            }
         };
+
         using leaf_node = leaf_type;
         using node_type = std::variant<branch_node, leaf_node>;
         using node_list = std::vector<node_type>;
@@ -53,7 +68,7 @@ namespace mamba::util
         /**
          * Reserve (allocate) space for @p nodes.
          *
-         * This improves the efficency of ``add_leaf`` and ``add_branch`` but does not
+         * This improves the efficiency of ``add_leaf`` and ``add_branch`` but does not
          * modify the tree in any way.
          */
         void reserve(size_type size);
@@ -61,7 +76,7 @@ namespace mamba::util
         /**
          * Add a node with no children.
          *
-         * Return an ID that can be used to poin to this node as a children in ``add_branch``.
+         * Return an ID that can be used to point to this node as a children in ``add_branch``.
          */
         auto add_leaf(const leaf_type& leaf) -> idx_type;
         auto add_leaf(leaf_type&& leaf) -> idx_type;
@@ -69,7 +84,7 @@ namespace mamba::util
         /**
          * Add a node with exactly two children.
          *
-         * The children must have been previously added to the tree and thei IDs can be used
+         * The children must have been previously added to the tree and their IDs can be used
          * to point to them.
          */
         auto add_branch(const branch_type& branch, idx_type left_child, idx_type right_child)
@@ -87,6 +102,20 @@ namespace mamba::util
         [[nodiscard]] auto left(idx_type idx) const -> idx_type;
         [[nodiscard]] auto right(idx_type idx) const -> idx_type;
         [[nodiscard]] auto root() const -> idx_type;
+
+        // TODO(C++20): replace by the `= default` implementation of `operator==`
+        [[nodiscard]] auto operator==(const flat_binary_tree& other) const -> bool
+        {
+            return m_nodes == other.m_nodes && m_root == other.m_root;
+        }
+
+        [[nodiscard]] auto operator!=(const flat_binary_tree& other) const -> bool
+        {
+            return !(*this == other);
+        }
+
+        template <typename Visitor>
+        void dfs_raw(Visitor&& visitor, idx_type start) const;
 
     private:
 
@@ -242,6 +271,29 @@ namespace mamba::util
         -> idx_type
     {
         return add_branch_impl(std::move(branch), left_child, right_child);
+    }
+
+    template <typename B, typename L>
+    template <typename Visitor>
+    void flat_binary_tree<B, L>::dfs_raw(Visitor&& visitor, idx_type start_idx) const
+    {
+        if (is_leaf(start_idx))
+        {
+            visitor.on_leaf(*this, start_idx);
+        }
+        else
+        {
+            const auto left_idx = left(start_idx);
+            const auto right_idx = right(start_idx);
+
+            visitor.on_branch_left_before(*this, start_idx, left_idx);
+            dfs_raw(visitor, left_idx);
+
+            visitor.on_branch_infix(*this, start_idx, left_idx, right_idx);
+
+            dfs_raw(visitor, right_idx);
+            visitor.on_branch_right_after(*this, start_idx, right_idx);
+        }
     }
 }
 #endif

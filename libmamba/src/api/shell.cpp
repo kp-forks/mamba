@@ -11,9 +11,9 @@
 #include "mamba/api/shell.hpp"
 #include "mamba/core/activation.hpp"
 #include "mamba/core/context.hpp"
-#include "mamba/core/environment.hpp"
 #include "mamba/core/shell_init.hpp"
 #include "mamba/fs/filesystem.hpp"
+#include "mamba/util/path_manip.hpp"
 
 #ifdef _WIN32
 #include "mamba/core/util_os.hpp"
@@ -66,7 +66,7 @@ namespace mamba
         }
         else
         {
-            init_shell(ctx, shell_type, fs::weakly_canonical(env::expand_user(prefix)));
+            init_shell(ctx, shell_type, fs::weakly_canonical(util::expand_home(prefix.string())));
         }
     }
 
@@ -78,7 +78,7 @@ namespace mamba
         }
         else
         {
-            deinit_shell(ctx, shell_type, fs::weakly_canonical(env::expand_user(prefix)));
+            deinit_shell(ctx, shell_type, fs::weakly_canonical(util::expand_home(prefix.string())));
         }
     }
 
@@ -94,7 +94,7 @@ namespace mamba
     void shell_hook(Context& ctx, const std::string& shell_type)
     {
         auto activator = make_activator(ctx, shell_type);
-        // TODO do we need to do something wtih `shell_prefix -> root_prefix?`?
+        // TODO do we need to do something with `shell_prefix -> root_prefix?`?
         if (ctx.output_params.json)
         {
             Console::instance().json_write({ { "success", true },
@@ -135,15 +135,18 @@ namespace mamba
         std::cout << activator->deactivate();
     }
 
+#ifdef _WIN32
     void shell_enable_long_path_support(Palette palette)
     {
-#ifdef _WIN32
         if (const bool success = enable_long_paths_support(/* force= */ true, palette); !success)
         {
             throw std::runtime_error("Error enabling Windows long-path support");
         }
-#else
-        throw std::invalid_argument("Long path support is a Windows only option");
-#endif
     }
+#else
+    void shell_enable_long_path_support(Palette)
+    {
+        throw std::invalid_argument("Long path support is a Windows only option");
+    }
+#endif
 }

@@ -10,10 +10,11 @@
 
 #include "mamba/api/config.hpp"
 #include "mamba/api/configuration.hpp"
-#include "mamba/core/environment.hpp"
 #include "mamba/core/fsutil.hpp"
 #include "mamba/core/util.hpp"
 #include "mamba/util/build.hpp"
+#include "mamba/util/environment.hpp"
+#include "mamba/util/path_manip.hpp"
 
 #include "common_options.hpp"
 
@@ -62,11 +63,13 @@ compute_config_path(Configuration& config, bool touch_if_not_exists)
     auto& env_path = config.at("config_set_env_path");
     auto& system_path = config.at("config_set_system_path");
 
-    fs::u8path rc_source = env::expand_user(env::home_directory() / ".condarc");
+    fs::u8path rc_source = util::expand_home(
+        mamba::util::path_concat(mamba::util::user_home_dir(), ".condarc")
+    );
 
     if (file_path.configured())
     {
-        rc_source = env::expand_user(file_path.value<fs::u8path>()).string();
+        rc_source = util::expand_home(file_path.value<fs::u8path>().string());
     }
     else if (env_path.configured())
     {
@@ -103,7 +106,9 @@ void
 init_config_describe_options(CLI::App* subcom, mamba::Configuration& config)
 {
     auto& specs = config.at("specs");
-    subcom->add_option("configs", specs.get_cli_config<std::vector<std::string>>(), "Configuration keys");
+    subcom
+        ->add_option("configs", specs.get_cli_config<std::vector<std::string>>(), "Configuration keys")
+        ->option_text("CONFIG1 CONFIG2...");
 
     auto& show_long_descriptions = config.at("show_config_long_descriptions");
     subcom->add_flag(
@@ -299,6 +304,8 @@ void
 set_sequence_to_rc(mamba::Configuration& config, const SequenceAddType& opt)
 {
     config.at("use_target_prefix_fallback").set_value(true);
+    config.at("use_default_prefix_fallback").set_value(true);
+    config.at("use_root_prefix_fallback").set_value(true);
     config.at("target_prefix_checks")
         .set_value(
             MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX | MAMBA_ALLOW_NOT_ENV_PREFIX
@@ -347,12 +354,16 @@ set_config_remove_key_command(CLI::App* subcom, mamba::Configuration& config)
     auto& remove_key = config.insert(Configurable("remove_key", std::string(""))
                                          .group("Output, Prompt and Flow Control")
                                          .description("Remove a configuration key and its values"));
-    subcom->add_option("remove_key", remove_key.get_cli_config<std::string>(), remove_key.description());
+    subcom
+        ->add_option("remove_key", remove_key.get_cli_config<std::string>(), remove_key.description())
+        ->option_text("KEY");
 
     subcom->callback(
         [&]()
         {
             config.at("use_target_prefix_fallback").set_value(true);
+            config.at("use_default_prefix_fallback").set_value(true);
+            config.at("use_root_prefix_fallback").set_value(true);
             config.at("target_prefix_checks")
                 .set_value(
                     MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -406,16 +417,16 @@ set_config_remove_command(CLI::App* subcom, mamba::Configuration& config)
                 "Remove a configuration value from a list key. This removes all instances of the value."
             )
     );
-    subcom->add_option(
-        "remove",
-        remove_vec_map.get_cli_config<string_list>(),
-        remove_vec_map.description()
-    );
+    subcom
+        ->add_option("remove", remove_vec_map.get_cli_config<string_list>(), remove_vec_map.description())
+        ->option_text("VALUE");
 
     subcom->callback(
         [&]
         {
             config.at("use_target_prefix_fallback").set_value(true);
+            config.at("use_default_prefix_fallback").set_value(true);
+            config.at("use_root_prefix_fallback").set_value(true);
             config.at("target_prefix_checks")
                 .set_value(
                     MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -486,13 +497,17 @@ set_config_set_command(CLI::App* subcom, mamba::Configuration& config)
     auto& set_value = config.insert(Configurable("set_value", std::vector<std::string>({}))
                                         .group("Output, Prompt and Flow Control")
                                         .description("Set configuration value on rc file"));
-    subcom->add_option("set_value", set_value.get_cli_config<string_list>(), set_value.description());
+    subcom
+        ->add_option("set_value", set_value.get_cli_config<string_list>(), set_value.description())
+        ->option_text("VALUE");
 
 
     subcom->callback(
         [&]
         {
             config.at("use_target_prefix_fallback").set_value(true);
+            config.at("use_default_prefix_fallback").set_value(true);
+            config.at("use_root_prefix_fallback").set_value(true);
             config.at("target_prefix_checks")
                 .set_value(
                     MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -532,12 +547,16 @@ set_config_get_command(CLI::App* subcom, mamba::Configuration& config)
     auto& get_value = config.insert(Configurable("get_value", std::string(""))
                                         .group("Output, Prompt and Flow Control")
                                         .description("Display configuration value from rc file"));
-    subcom->add_option("get_value", get_value.get_cli_config<std::string>(), get_value.description());
+    subcom
+        ->add_option("get_value", get_value.get_cli_config<std::string>(), get_value.description())
+        ->option_text("VALUE");
 
     subcom->callback(
         [&]
         {
             config.at("use_target_prefix_fallback").set_value(true);
+            config.at("use_default_prefix_fallback").set_value(true);
+            config.at("use_root_prefix_fallback").set_value(true);
             config.at("target_prefix_checks")
                 .set_value(
                     MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX

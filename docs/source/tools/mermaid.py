@@ -1,16 +1,16 @@
 """
-    sphinx-mermaid
-    ~~~~~~~~~~~~~~~
+sphinx-mermaid
+~~~~~~~~~~~~~~~
 
-    https://github.com/mgaitan/sphinxcontrib-mermaid
-    Modified for the purpose of CoSApp by the CoSApp team
-    https://gitlab.com/cosapp/cosapp
+https://github.com/mgaitan/sphinxcontrib-mermaid
+Modified for the purpose of CoSApp by the CoSApp team
+https://gitlab.com/cosapp/cosapp
 
-    Allow mermaid diagramas to be included in Sphinx-generated
-    documents inline.
+Allow mermaid diagrams to be included in Sphinx-generated
+documents inline.
 
-    :copyright: Copyright 2016 by Martín Gaitán and others, see AUTHORS.
-    :license: BSD, see LICENSE for details.
+:copyright: Copyright 2016 by Martín Gaitán and others, see AUTHORS.
+:license: BSD, see LICENSE for details.
 """
 
 import codecs
@@ -25,7 +25,6 @@ import sphinx
 from docutils import nodes
 from docutils.parsers.rst import Directive, directives
 from docutils.statemachine import ViewList
-from six import text_type
 from sphinx.application import Sphinx
 from sphinx.errors import SphinxError
 from sphinx.locale import _
@@ -51,9 +50,7 @@ def figure_wrapper(directive, node, caption):
         figure_node["align"] = node.attributes.pop("align")
 
     parsed = nodes.Element()
-    directive.state.nested_parse(
-        ViewList([caption], source=""), directive.content_offset, parsed
-    )
+    directive.state.nested_parse(ViewList([caption], source=""), directive.content_offset, parsed)
     caption_node = nodes.caption(parsed[0].rawsource, "", *parsed[0].children)
     caption_node.source = parsed[0].source
     caption_node.line = parsed[0].line
@@ -87,8 +84,7 @@ class Mermaid(Directive):
             if self.content:
                 return [
                     document.reporter.warning(
-                        "Mermaid directive cannot have both content and "
-                        "a filename argument",
+                        "Mermaid directive cannot have both content and a filename argument",
                         line=self.lineno,
                     )
                 ]
@@ -99,11 +95,10 @@ class Mermaid(Directive):
             try:
                 with codecs.open(filename, "r", "utf-8") as fp:
                     mmcode = fp.read()
-            except (IOError, OSError):  # noqa
+            except OSError:  # noqa
                 return [
                     document.reporter.warning(
-                        "External Mermaid file %r not found or reading "
-                        "it failed" % filename,
+                        "External Mermaid file %r not found or reading it failed" % filename,
                         line=self.lineno,
                     )
                 ]
@@ -144,12 +139,12 @@ def render_mm(self, code, options, fmt, prefix="mermaid"):
         fmt = "png"
 
     mermaid_cmd = self.builder.config.mermaid_cmd
-    hashkey = (
-        code + str(options) + str(self.builder.config.mermaid_sequence_config)
-    ).encode("utf-8")
+    hashkey = (code + str(options) + str(self.builder.config.mermaid_sequence_config)).encode(
+        "utf-8"
+    )
 
-    basename = "%s-%s" % (prefix, sha1(hashkey).hexdigest())
-    fname = "%s.%s" % (basename, fmt)
+    basename = f"{prefix}-{sha1(hashkey).hexdigest()}"
+    fname = f"{basename}.{fmt}"
     relfn = posixpath.join(self.builder.imgpath, fname)
     outdir = os.path.join(self.builder.outdir, self.builder.imagedir)
     outfn = os.path.join(outdir, fname)
@@ -161,7 +156,7 @@ def render_mm(self, code, options, fmt, prefix="mermaid"):
     ensuredir(os.path.dirname(outfn))
 
     # mermaid expects UTF-8 by default
-    if isinstance(code, text_type):
+    if isinstance(code, str):
         code = code.encode("utf-8")
 
     with open(tmpfn, "wb") as t:
@@ -188,21 +183,17 @@ def render_mm(self, code, options, fmt, prefix="mermaid"):
         logger.info(stdout)
 
     if p.returncode != 0:
-        raise MermaidError(
-            "Mermaid exited with error:\n[stderr]\n%s\n"
-            "[stdout]\n%s" % (stderr, stdout)
-        )
+        raise MermaidError(f"Mermaid exited with error:\n[stderr]\n{stderr}\n[stdout]\n{stdout}")
     if not os.path.isfile(outfn):
         raise MermaidError(
-            "Mermaid did not produce an output file:\n[stderr]\n%s\n"
-            "[stdout]\n%s" % (stderr, stdout)
+            "Mermaid did not produce an output file:\n[stderr]\n{}\n[stdout]\n{}".format(
+                stderr, stdout
+            )
         )
     return relfn, outfn
 
 
-def _render_mm_html_raw(
-    self, node, code, options, prefix="mermaid", imgcls=None, alt=None
-):
+def _render_mm_html_raw(self, node, code, options, prefix="mermaid", imgcls=None, alt=None):
     if "align" in node:
         tag_template = """<div align="{align}" class="mermaid align-{align}">
             {code}
@@ -213,9 +204,7 @@ def _render_mm_html_raw(
             {code}
         </div>"""
 
-    self.body.append(
-        tag_template.format(align=node.get("align"), code=self.encode(code))
-    )
+    self.body.append(tag_template.format(align=node.get("align"), code=self.encode(code)))
     raise nodes.SkipNode
 
 
@@ -229,8 +218,7 @@ def render_mm_html(self, node, code, options, prefix="mermaid", imgcls=None, alt
     try:
         if fmt not in ("png", "svg"):
             raise MermaidError(
-                "mermaid_output_format must be one of 'raw', 'png', "
-                "'svg', but is %r" % fmt
+                "mermaid_output_format must be one of 'raw', 'png', 'svg', but is %r" % fmt
             )
 
         fname, outfn = render_mm(self, code, options, fmt, prefix)
@@ -245,8 +233,8 @@ def render_mm_html(self, node, code, options, prefix="mermaid", imgcls=None, alt
             alt = node.get("alt", self.encode(code).strip())
         imgcss = imgcls and 'class="%s"' % imgcls or ""
         if fmt == "svg":
-            svgtag = """<object data="%s" type="image/svg+xml">
-            <p class="warning">%s</p></object>\n""" % (
+            svgtag = """<object data="{}" type="image/svg+xml">
+            <p class="warning">{}</p></object>\n""".format(
                 fname,
                 alt,
             )
@@ -254,10 +242,10 @@ def render_mm_html(self, node, code, options, prefix="mermaid", imgcls=None, alt
         else:
             if "align" in node:
                 self.body.append(
-                    '<div align="%s" class="align-%s">' % (node["align"], node["align"])
+                    '<div align="{}" class="align-{}">'.format(node["align"], node["align"])
                 )
 
-            self.body.append('<img src="%s" alt="%s" %s/>\n' % (fname, alt, imgcss))
+            self.body.append(f'<img src="{fname}" alt="{alt}" {imgcss}/>\n')
             if "align" in node:
                 self.body.append("</div>\n")
 
@@ -295,8 +283,7 @@ def render_mm_latex(self, node, code, options, prefix="mermaid"):
 
         if p.returncode != 0:
             raise MermaidError(
-                "PdfCrop exited with error:\n[stderr]\n%s\n"
-                "[stdout]\n%s" % (stderr, stdout)
+                f"PdfCrop exited with error:\n[stderr]\n{stderr}\n[stdout]\n{stdout}"
             )
         if not os.path.isfile(outfn):
             raise MermaidError(
@@ -304,9 +291,7 @@ def render_mm_latex(self, node, code, options, prefix="mermaid"):
                 "[stdout]\n%s" % (stderr, stdout)
             )
 
-        fname = "{filename[0]}-crop{filename[1]}".format(
-            filename=os.path.splitext(fname)
-        )
+        fname = "{filename[0]}-crop{filename[1]}".format(filename=os.path.splitext(fname))
 
     is_inline = self.is_inline(node)
     if is_inline:
@@ -323,9 +308,7 @@ def render_mm_latex(self, node, code, options, prefix="mermaid"):
             elif node["align"] == "right":
                 self.body.append("{\\hspace*{\\fill}")
                 post = "}"
-        self.body.append(
-            "%s\\sphinxincludegraphics{%s}%s" % (para_separator, fname, para_separator)
-        )
+        self.body.append(f"{para_separator}\\sphinxincludegraphics{{{fname}}}{para_separator}")
         if post:
             self.body.append(post)
 
@@ -369,7 +352,7 @@ def man_visit_mermaid(self, node):
 
 def config_inited(app, config):
     version = config.mermaid_version
-    mermaid_js_url = "https://unpkg.com/mermaid@{}/dist/mermaid.min.js".format(version)
+    mermaid_js_url = f"https://unpkg.com/mermaid@{version}/dist/mermaid.min.js"
     app.add_js_file(mermaid_js_url)
     app.add_js_file(
         None,

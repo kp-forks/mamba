@@ -11,16 +11,15 @@
 #include <string>
 #include <vector>
 
+#include "mamba/core/fsutil.hpp"
 #include "mamba/fs/filesystem.hpp"
-
-#include "fsutil.hpp"
-#include "package_info.hpp"
+#include "mamba/specs/package_info.hpp"
 
 #define PACKAGE_CACHE_MAGIC_FILE "urls.txt"
 
 namespace mamba
 {
-    struct ValidationOptions;
+    struct ValidationParams;
 
     enum class Writable
     {
@@ -41,10 +40,10 @@ namespace mamba
         void set_writable(Writable writable);
         Writable is_writable();
         fs::u8path path() const;
-        void clear_query_cache(const PackageInfo& s);
+        void clear_query_cache(const specs::PackageInfo& s);
 
-        bool has_valid_tarball(const PackageInfo& s, const ValidationOptions& options);
-        bool has_valid_extracted_dir(const PackageInfo& s, const ValidationOptions& options);
+        bool has_valid_tarball(const specs::PackageInfo& s, const ValidationParams& params);
+        bool has_valid_extracted_dir(const specs::PackageInfo& s, const ValidationParams& params);
 
     private:
 
@@ -60,25 +59,25 @@ namespace mamba
     {
     public:
 
-        MultiPackageCache(const std::vector<fs::u8path>& pkgs_dirs, const ValidationOptions& options);
+        MultiPackageCache(const std::vector<fs::u8path>& pkgs_dirs, const ValidationParams& params);
 
         std::vector<fs::u8path> paths() const;
 
-        fs::u8path get_tarball_path(const PackageInfo& s, bool return_empty = true);
-        fs::u8path get_extracted_dir_path(const PackageInfo& s, bool return_empty = true);
+        fs::u8path get_tarball_path(const specs::PackageInfo& s, bool return_empty = true);
+        fs::u8path get_extracted_dir_path(const specs::PackageInfo& s, bool return_empty = true);
 
         fs::u8path first_writable_path();
         PackageCacheData& first_writable_cache(bool create = false);
         std::vector<PackageCacheData*> writable_caches();
 
-        void clear_query_cache(const PackageInfo& s);
+        void clear_query_cache(const specs::PackageInfo& s);
 
     private:
 
         std::vector<PackageCacheData> m_caches;
         std::map<std::string, fs::u8path> m_cached_tarballs;
         std::map<std::string, fs::u8path> m_cached_extracted_dirs;
-        const ValidationOptions& m_options;
+        const ValidationParams& m_params;
     };
 }  // namespace mamba
 

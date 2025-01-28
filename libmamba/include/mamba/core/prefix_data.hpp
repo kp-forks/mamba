@@ -10,9 +10,9 @@
 #include <map>
 #include <string>
 
-#include "error_handling.hpp"
-#include "history.hpp"
-#include "package_info.hpp"
+#include "mamba/core/error_handling.hpp"
+#include "mamba/core/history.hpp"
+#include "mamba/specs/package_info.hpp"
 
 namespace mamba
 {
@@ -22,18 +22,21 @@ namespace mamba
     {
     public:
 
-        using package_map = std::map<std::string, PackageInfo>;
+        using package_map = std::map<std::string, specs::PackageInfo>;
 
         static expected_t<PrefixData>
-        create(const fs::u8path& prefix_path, ChannelContext& channel_context);
+        create(const fs::u8path& prefix_path, ChannelContext& channel_context, bool no_pip = false);
 
-        void add_packages(const std::vector<PackageInfo>& packages);
-        const package_map& records() const;
+        void add_packages(const std::vector<specs::PackageInfo>& packages);
         void load_single_record(const fs::u8path& path);
+
+        const package_map& records() const;
+        const package_map& pip_records() const;
+        package_map all_pkg_mgr_records() const;
 
         History& history();
         const fs::u8path& path() const;
-        std::vector<PackageInfo> sorted_records() const;
+        std::vector<specs::PackageInfo> sorted_records() const;
 
         ChannelContext& channel_context() const
         {
@@ -42,11 +45,13 @@ namespace mamba
 
     private:
 
-        PrefixData(const fs::u8path& prefix_path, ChannelContext& channel_context);
-        void load();
+        PrefixData(const fs::u8path& prefix_path, ChannelContext& channel_context, bool no_pip);
+
+        void load_site_packages();
 
         History m_history;
         package_map m_package_records;
+        package_map m_pip_package_records;
         fs::u8path m_prefix_path;
 
         ChannelContext& m_channel_context;

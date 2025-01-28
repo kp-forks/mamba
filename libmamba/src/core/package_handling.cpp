@@ -5,8 +5,6 @@
 // The full license is in the file LICENSE, distributed with this software.
 
 
-#include <sstream>
-
 #include <archive.h>
 #include <archive_entry.h>
 #include <reproc++/run.hpp>
@@ -17,12 +15,11 @@
 #include "mamba/core/package_paths.hpp"
 #include "mamba/core/thread_utils.hpp"
 #include "mamba/core/util_os.hpp"
-#include "mamba/core/validate.hpp"
 #include "mamba/util/string.hpp"
+#include "mamba/validation/tools.hpp"
 
+#include "../download/compression.hpp"
 #include "nlohmann/json.hpp"
-
-#include "compression.hpp"
 
 namespace mamba
 {
@@ -30,12 +27,11 @@ namespace mamba
     {
         return {
             /* .sparse = */ context.extract_sparse,
-            /* .subproc_mode = */ context.command_params.is_micromamba
-                ? extract_subproc_mode::micromamba
+            /* .subproc_mode = */ context.command_params.is_mamba_exe
+                ? extract_subproc_mode::mamba_exe
                 : extract_subproc_mode::mamba_package,
         };
     }
-
 
     class extraction_guard
     {
@@ -77,7 +73,8 @@ namespace mamba
     public:
 
         scoped_archive_read()
-            : scoped_archive_read(archive_read_new()){};
+            : scoped_archive_read(archive_read_new()) {};
+
         static scoped_archive_read read_disk()
         {
             return scoped_archive_read(archive_read_disk_new());
@@ -172,7 +169,6 @@ namespace mamba
 
         archive_entry* m_entry;
     };
-
 
     void stream_extract_archive(
         scoped_archive_read& a,
@@ -454,7 +450,8 @@ namespace mamba
                 zstd,
                 compression_level,
                 compression_threads,
-                [](const fs::u8path& p) -> bool {
+                [](const fs::u8path& p) -> bool
+                {
                     return p.std_path().begin() != p.std_path().end()
                            && *p.std_path().begin() != "info";
                 }
@@ -465,7 +462,8 @@ namespace mamba
                 zstd,
                 compression_level,
                 compression_threads,
-                [](const fs::u8path& p) -> bool {
+                [](const fs::u8path& p) -> bool
+                {
                     return p.std_path().begin() != p.std_path().end()
                            && *p.std_path().begin() == "info";
                 }
@@ -518,7 +516,7 @@ namespace mamba
         {
             conda_extract_context(scoped_archive_read& lsource)
                 : source(lsource)
-                , buffer(get_zstd_buff_out_size())
+                , buffer(download::get_zstd_buff_out_size())
             {
             }
 
@@ -612,7 +610,6 @@ namespace mamba
         fs::current_path(prev_path);
     }
 
-
     static la_ssize_t file_read(archive*, void* client_data, const void** buff)
     {
         conda_extract_context* mine = static_cast<conda_extract_context*>(client_data);
@@ -635,7 +632,6 @@ namespace mamba
         archive_read_set_callback_data(a, ctx);
         return archive_read_open1(a);
     }
-
 
     void extract_conda(
         const fs::u8path& file,
@@ -772,7 +768,7 @@ namespace mamba
     extract_subproc(const fs::u8path& file, const fs::u8path& dest, const ExtractOptions& options)
     {
         std::vector<std::string> args;
-        if (options.subproc_mode == extract_subproc_mode::micromamba)
+        if (options.subproc_mode == extract_subproc_mode::mamba_exe)
         {
             args = { get_self_exe_path().string(), "package", "extract", file.string(), dest.string() };
         }
@@ -826,10 +822,9 @@ namespace mamba
         return true;
     }
 
-
-    bool validate(const fs::u8path& pkg_folder, const ValidationOptions& options)
+    bool validate(const fs::u8path& pkg_folder, const ValidationParams& params)
     {
-        auto safety_checks = options.safety_checks;
+        auto safety_checks = params.safety_checks;
         if (safety_checks == VerificationLevel::Disabled)
         {
             return true;
@@ -837,7 +832,7 @@ namespace mamba
 
         bool is_warn = safety_checks == VerificationLevel::Warn;
         bool is_fail = safety_checks == VerificationLevel::Enabled;
-        bool full_validation = options.extra_safety_checks;
+        bool full_validation = params.extra_safety_checks;
 
         try
         {
@@ -882,7 +877,7 @@ namespace mamba
                         }
                     }
                     if (full_validation && !is_invalid && p.path_type != PathType::SOFTLINK
-                        && !validation::sha256(full_path, p.sha256))
+                        && !(validation::sha256sum(full_path) == p.sha256))
                     {
                         LOG_WARNING << "Invalid package cache, file '" << full_path.string()
                                     << "' has incorrect SHA-256 checksum";

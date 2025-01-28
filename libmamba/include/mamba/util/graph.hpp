@@ -52,7 +52,7 @@ namespace mamba::util
         bool has_node(node_id id) const;
         bool has_edge(node_id from, node_id to) const;
 
-        // TODO C++20 better to return a range since this search cannot be interupted from the
+        // TODO C++20 better to return a range since this search cannot be interrupted from the
         // visitor
         template <typename UnaryFunc>
         UnaryFunc for_each_node_id(UnaryFunc func) const;
@@ -97,7 +97,7 @@ namespace mamba::util
         std::size_t m_number_of_edges = 0;
     };
 
-    // TODO C++20 better to return a range since this search cannot be interupted from the
+    // TODO C++20 better to return a range since this search cannot be interrupted from the
     // visitor
     // TODO should let user implement reverse with a reverse view when available
     template <typename Graph, typename Visitor>
@@ -144,6 +144,7 @@ namespace mamba::util
         void start_node(node_id, const graph_t&)
         {
         }
+
         void finish_node(node_id, const graph_t&)
         {
         }
@@ -151,15 +152,19 @@ namespace mamba::util
         void start_edge(node_id, node_id, const graph_t&)
         {
         }
+
         void tree_edge(node_id, node_id, const graph_t&)
         {
         }
+
         void back_edge(node_id, node_id, const graph_t&)
         {
         }
+
         void forward_or_cross_edge(node_id, node_id, const graph_t&)
         {
         }
+
         void finish_edge(node_id, node_id, const graph_t&)
         {
         }

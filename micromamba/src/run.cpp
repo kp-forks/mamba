@@ -10,6 +10,7 @@
 
 #include <fmt/color.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 #include <reproc++/run.hpp>
 #include <spdlog/spdlog.h>
@@ -19,7 +20,7 @@
 #include "mamba/core/error_handling.hpp"
 #include "mamba/core/execution.hpp"
 #include "mamba/core/util_os.hpp"
-#include "mamba/core/util_random.hpp"
+#include "mamba/util/random.hpp"
 
 #include "common_options.hpp"
 
@@ -40,7 +41,6 @@ extern "C"
 #include "mamba/core/run.hpp"
 
 using namespace mamba;  // NOLINT(build/namespaces)
-
 
 void
 set_ps_command(CLI::App* subcom, Context& context)
@@ -95,7 +95,8 @@ set_ps_command(CLI::App* subcom, Context& context)
 
     auto stop_subcom = subcom->add_subcommand("stop");
     static std::string pid_or_name;
-    stop_subcom->add_option("pid_or_name", pid_or_name, "Process ID or process name (label)");
+    stop_subcom->add_option("pid_or_name", pid_or_name, "Process ID or process name (label)")
+        ->option_text("PID or NAME");
     stop_subcom->callback(
         []()
         {
@@ -145,10 +146,13 @@ set_run_command(CLI::App* subcom, Configuration& config)
                                          streams,
                                          "Attach to stdin, stdout and/or stderr. -a \"\" for disabling stream redirection"
                                      )
+                                     ->option_text("STREAM")
                                      ->join(',');
 
     static std::string cwd;
-    subcom->add_option("--cwd", cwd, "Current working directory for command to run in. Defaults to cwd");
+    subcom
+        ->add_option("--cwd", cwd, "Current working directory for command to run in. Defaults to cwd")
+        ->option_text("DIR");
 
     static bool detach = false;
 #ifndef _WIN32
@@ -160,15 +164,18 @@ set_run_command(CLI::App* subcom, Configuration& config)
 
     static std::vector<std::string> env_vars;
     subcom->add_option("-e,--env", env_vars, "Add env vars with -e ENVVAR or -e ENVVAR=VALUE")
+        ->option_text("ENVVAR")
         ->allow_extra_args(false);
 
     static std::string specific_process_name;
 #ifndef _WIN32
-    subcom->add_option(
-        "--label",
-        specific_process_name,
-        "Specifies the name of the process. If not set, a unique name will be generated derived from the executable name if possible."
-    );
+    subcom
+        ->add_option(
+            "--label",
+            specific_process_name,
+            "Specifies the name of the process. If not set, a unique name will be generated derived from the executable name if possible."
+        )
+        ->option_text("NAME");
 #endif
 
     subcom->prefix_command();
@@ -211,7 +218,7 @@ set_run_command(CLI::App* subcom, Configuration& config)
 
             auto& ctx = config.context();
 
-            auto const get_prefix = [&]()
+            const auto get_prefix = [&]()
             {
                 if (auto prefix = ctx.prefix_params.target_prefix; !prefix.empty())
                 {

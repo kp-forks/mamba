@@ -8,8 +8,8 @@
 #include <yaml-cpp/yaml.h>
 
 #include "mamba/core/env_lockfile.hpp"
-#include "mamba/core/match_spec.hpp"
 #include "mamba/fs/filesystem.hpp"
+#include "mamba/specs/package_info.hpp"
 #include "mamba/util/string.hpp"
 
 namespace mamba
@@ -18,11 +18,10 @@ namespace mamba
     {
         using Package = EnvironmentLockFile::Package;
 
-        tl::expected<Package, mamba_error>
-        read_package_info(ChannelContext& channel_context, const YAML::Node& package_node)
+        tl::expected<Package, mamba_error> read_package_info(const YAML::Node& package_node)
         {
             Package package{
-                /* .info = */ mamba::PackageInfo{ package_node["name"].as<std::string>() },
+                /* .info = */ specs::PackageInfo{ package_node["name"].as<std::string>() },
                 /* .is_optional = */
                 [&]
                 {
@@ -56,18 +55,27 @@ namespace mamba
                 ));
             }
 
-            package.info.url = package_node["url"].as<std::string>();
-            const MatchSpec spec{ package.info.url, channel_context };
-            package.info.fn = spec.fn;
-            package.info.build_string = spec.build_string;
-            package.info.subdir = spec.subdir;
-            package.info.channel = spec.channel;
+            package.info.package_url = package_node["url"].as<std::string_view>();
+            {
+                auto maybe_parsed_info = specs::PackageInfo::from_url(package.info.package_url);
+                if (!maybe_parsed_info)
+                {
+                    return make_unexpected(
+                        maybe_parsed_info.error().what(),
+                        mamba_error_code::invalid_spec
+                    );
+                }
+                package.info.filename = maybe_parsed_info->filename;
+                package.info.channel = maybe_parsed_info->channel;
+                package.info.build_string = maybe_parsed_info->build_string;
+                package.info.platform = maybe_parsed_info->platform;
+            }
 
             for (const auto& dependency : package_node["dependencies"])
             {
                 const auto dependency_name = dependency.first.as<std::string>();
                 const auto dependency_constraint = dependency.second.as<std::string>();
-                package.info.depends.push_back(
+                package.info.dependencies.push_back(
                     fmt::format("{} {}", dependency_name, dependency_constraint)
                 );
             }
@@ -145,7 +153,7 @@ namespace mamba
         }
 
         tl::expected<EnvironmentLockFile, mamba_error>
-        read_environment_lockfile(ChannelContext& channel_context, const YAML::Node& lockfile_yaml)
+        read_environment_lockfile(const YAML::Node& lockfile_yaml)
         {
             const auto& maybe_metadata = read_metadata(lockfile_yaml["metadata"]);
             if (!maybe_metadata)
@@ -158,7 +166,7 @@ namespace mamba
             std::vector<Package> packages;
             for (const auto& package_node : lockfile_yaml["package"])
             {
-                if (auto maybe_package = read_package_info(channel_context, package_node))
+                if (auto maybe_package = read_package_info(package_node))
                 {
                     packages.push_back(maybe_package.value());
                 }
@@ -173,7 +181,7 @@ namespace mamba
     }
 
     tl::expected<EnvironmentLockFile, mamba_error>
-    read_environment_lockfile(ChannelContext& channel_context, const fs::u8path& lockfile_location)
+    read_environment_lockfile(const fs::u8path& lockfile_location)
     {
         const auto file_path = fs::absolute(lockfile_location);  // Having the complete path helps
                                                                  // with logging and error reports.
@@ -185,12 +193,12 @@ namespace mamba
             switch (lockfile_version)
             {
                 case 1:
-                    return env_lockfile_v1::read_environment_lockfile(channel_context, lockfile_content);
+                    return env_lockfile_v1::read_environment_lockfile(lockfile_content);
 
                 default:
                 {
                     return tl::unexpected(EnvLockFileError::make_error(
-                        file_parsing_error_code::unsuported_version,
+                        file_parsing_error_code::unsupported_version,
                         fmt::format(
                             "Failed to read environment lockfile at '{}' : unknown version '{}'",
                             file_path.string(),
@@ -212,25 +220,26 @@ namespace mamba
                 std::type_index{ typeid(err) }
             ));
         }
-        catch (...)
+        catch (const std::exception& e)
         {
             return tl::unexpected(EnvLockFileError::make_error(
                 file_parsing_error_code::parsing_failure,
                 fmt::format(
-                    "unknown error while reading environment lockfile located at '{}'",
-                    file_path.string()
+                    "Error while reading environment lockfile located at '{}': {}",
+                    file_path.string(),
+                    e.what()
                 )
             ));
         }
     }
 
-    std::vector<PackageInfo> EnvironmentLockFile::get_packages_for(
+    std::vector<specs::PackageInfo> EnvironmentLockFile::get_packages_for(
         std::string_view category,
         std::string_view platform,
         std::string_view manager
     ) const
     {
-        std::vector<PackageInfo> results;
+        std::vector<specs::PackageInfo> results;
 
         // TODO: c++20 - rewrite this with ranges
         const auto package_predicate = [&](const auto& package)

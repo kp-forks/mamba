@@ -9,12 +9,10 @@
 #include "constructor.hpp"
 #include "mamba/api/configuration.hpp"
 #include "mamba/api/install.hpp"
-#include "mamba/core/channel.hpp"
 #include "mamba/core/package_handling.hpp"
-#include "mamba/core/package_info.hpp"
+#include "mamba/core/subdirdata.hpp"
 #include "mamba/core/util.hpp"
 #include "mamba/util/string.hpp"
-#include "mamba/util/url_manip.hpp"
 
 
 using namespace mamba;  // NOLINT(build/namespaces)
@@ -26,7 +24,8 @@ init_constructor_parser(CLI::App* subcom, Configuration& config)
                                      .group("cli")
                                      .description("Extract the conda pkgs in <prefix>/pkgs"));
 
-    subcom->add_option("-p,--prefix", prefix.get_cli_config<fs::u8path>(), prefix.description());
+    subcom->add_option("-p,--prefix", prefix.get_cli_config<fs::u8path>(), prefix.description())
+        ->option_text("PATH");
 
     auto& extract_conda_pkgs = config.insert(Configurable("constructor_extract_conda_pkgs", false)
                                                  .group("cli")
@@ -66,11 +65,12 @@ set_constructor_command(CLI::App* subcom, mamba::Configuration& config)
     );
 }
 
-
 void
 construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pkgs, bool extract_tarball)
 {
     config.at("use_target_prefix_fallback").set_value(true);
+    config.at("use_default_prefix_fallback").set_value(true);
+    config.at("use_root_prefix_fallback").set_value(true);
     config.at("target_prefix_checks")
         .set_value(
             MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX | MAMBA_ALLOW_NOT_ENV_PREFIX
@@ -78,8 +78,6 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
     config.load();
 
     std::map<std::string, nlohmann::json> repodatas;
-
-    mamba::ChannelContext channel_context{ config.context() };
 
     if (extract_conda_pkgs)
     {
@@ -105,16 +103,15 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
         fs::u8path pkgs_dir = prefix / "pkgs";
         fs::u8path urls_file = pkgs_dir / "urls";
 
-        auto [package_details, _] = detail::parse_urls_to_package_info(
-            read_lines(urls_file),
-            channel_context
-        );
-
-        for (const auto& pkg_info : package_details)
+        for (const auto& raw_url : read_lines(urls_file))
         {
-            fs::u8path entry = pkgs_dir / pkg_info.fn;
-            LOG_TRACE << "Extracting " << pkg_info.fn << std::endl;
-            std::cout << "Extracting " << pkg_info.fn << std::endl;
+            auto pkg_info = specs::PackageInfo::from_url(raw_url)
+                                .or_else([](specs::ParseError&& err) { throw std::move(err); })
+                                .value();
+
+            fs::u8path entry = pkgs_dir / pkg_info.filename;
+            LOG_TRACE << "Extracting " << pkg_info.filename << std::endl;
+            std::cout << "Extracting " << pkg_info.filename << std::endl;
 
             fs::u8path base_path = extract(entry, ExtractOptions::from_context(config.context()));
 
@@ -122,14 +119,14 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
             fs::u8path index_path = base_path / "info" / "index.json";
 
             std::string channel_url;
-            if (pkg_info.url.size() > pkg_info.fn.size())
+            if (pkg_info.package_url.size() > pkg_info.filename.size())
             {
-                channel_url = pkg_info.url.substr(0, pkg_info.url.size() - pkg_info.fn.size());
+                channel_url = pkg_info.package_url.substr(
+                    0,
+                    pkg_info.package_url.size() - pkg_info.filename.size()
+                );
             }
-            std::string repodata_cache_name = util::concat(
-                util::cache_name_from_url(channel_url),
-                ".json"
-            );
+            std::string repodata_cache_name = util::concat(cache_name_from_url(channel_url), ".json");
             fs::u8path repodata_location = pkgs_dir / "cache" / repodata_cache_name;
 
             nlohmann::json repodata_record;
@@ -143,7 +140,7 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
                     repodatas[repodata_cache_name] = j;
                 }
                 auto& j = repodatas[repodata_cache_name];
-                repodata_record = find_package(j, pkg_info.fn);
+                repodata_record = find_package(j, pkg_info.filename);
             }
 
             nlohmann::json index;
@@ -158,7 +155,7 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
             }
             else
             {
-                LOG_WARNING << "Did not find a repodata record for " << pkg_info.url;
+                LOG_WARNING << "Did not find a repodata record for " << pkg_info.package_url;
                 repodata_record = index;
 
                 repodata_record["size"] = fs::file_size(entry);
@@ -172,8 +169,8 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
                 }
             }
 
-            repodata_record["fn"] = pkg_info.fn;
-            repodata_record["url"] = pkg_info.url;
+            repodata_record["fn"] = pkg_info.filename;
+            repodata_record["url"] = pkg_info.package_url;
             repodata_record["channel"] = pkg_info.channel;
 
             if (repodata_record.find("size") == repodata_record.end() || repodata_record["size"] == 0)
@@ -196,27 +193,27 @@ construct(Configuration& config, const fs::u8path& prefix, bool extract_conda_pk
     }
 }
 
-
 void
 read_binary_from_stdin_and_write_to_file(fs::u8path& filename)
 {
     std::ofstream out_stream = open_ofstream(filename, std::ofstream::binary);
+    FILE* stdin_bin;
     // Need to reopen stdin as binary
-    std::freopen(nullptr, "rb", stdin);
-    if (std::ferror(stdin))
+    stdin_bin = std::freopen(nullptr, "rb", stdin);
+    if (std::ferror(stdin_bin))
     {
         throw std::runtime_error("Re-opening stdin as binary failed.");
     }
     std::size_t len;
     std::array<char, 1024> buffer;
 
-    while ((len = std::fread(buffer.data(), sizeof(char), buffer.size(), stdin)) > 0)
+    while ((len = std::fread(buffer.data(), sizeof(char), buffer.size(), stdin_bin)) > 0)
     {
-        if (std::ferror(stdin) && !std::feof(stdin))
+        if (std::ferror(stdin_bin) && !std::feof(stdin_bin))
         {
             throw std::runtime_error("Reading from stdin failed.");
         }
-        out_stream.write(buffer.data(), len);
+        out_stream.write(buffer.data(), static_cast<std::streamsize>(len));
     }
     out_stream.close();
 }

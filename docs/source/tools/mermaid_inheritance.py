@@ -29,7 +29,8 @@ r"""
     :license: BSD, see LICENSE for details.
 """
 
-from typing import Any, Dict, Iterable, List, cast
+from typing import Any, cast
+from collections.abc import Iterable
 
 import sphinx
 from docutils import nodes
@@ -80,22 +81,22 @@ class MermaidGraph(InheritanceGraph):
     #     'style': '"setlinewidth(0.5)"',
     # }
 
-    def _format_node_attrs(self, attrs: Dict) -> str:
+    def _format_node_attrs(self, attrs: dict) -> str:
         # return ','.join(['%s=%s' % x for x in sorted(attrs.items())])
         return ""
 
-    def _format_graph_attrs(self, attrs: Dict) -> str:
+    def _format_graph_attrs(self, attrs: dict) -> str:
         # return ''.join(['%s=%s;\n' % x for x in sorted(attrs.items())])
         return ""
 
     def generate_dot(
         self,
         name: str,
-        urls: Dict = {},  # noqa
+        urls: dict = {},  # noqa
         env: BuildEnvironment = None,
-        graph_attrs: Dict = {},  # noqa
-        node_attrs: Dict = {},  # noqa
-        edge_attrs: Dict = {},  # noqa
+        graph_attrs: dict = {},  # noqa
+        node_attrs: dict = {},  # noqa
+        edge_attrs: dict = {},  # noqa
     ) -> str:
         """Generate a mermaid graph from the classes that were passed in
         to __init__.
@@ -120,17 +121,17 @@ class MermaidGraph(InheritanceGraph):
         res.append("classDiagram\n")
         for name, fullname, bases, tooltip in sorted(self.class_info):
             # Write the node
-            res.append("  class {!s}\n".format(name))
+            res.append(f"  class {name!s}\n")
             if fullname in urls:
                 res.append(
                     '  link {!s} "./{!s}" {!s}\n'.format(
-                        name, urls[fullname], tooltip or '"{}"'.format(name)
+                        name, urls[fullname], tooltip or f'"{name}"'
                     )
                 )
 
             # Write the edges
             for base_name in bases:
-                res.append("  {!s} <|-- {!s}\n".format(base_name, name))
+                res.append(f"  {base_name!s} <|-- {name!s}\n")
 
         return "".join(res)
 
@@ -159,7 +160,7 @@ class MermaidDiagram(InheritanceDiagram):
         "top-classes": directives.unchanged_required,
     }
 
-    def run(self) -> List[Node]:
+    def run(self) -> list[Node]:
         node = mermaid_inheritance()
         node.document = self.state.document
         class_names = self.arguments[0].split()
@@ -208,9 +209,7 @@ class MermaidDiagram(InheritanceDiagram):
             return [figure]
 
 
-def html_visit_mermaid_inheritance(
-    self: HTMLTranslator, node: inheritance_diagram
-) -> None:
+def html_visit_mermaid_inheritance(self: HTMLTranslator, node: inheritance_diagram) -> None:
     """
     Output the graph for HTML.  This will insert a PNG with clickable
     image map.
@@ -233,9 +232,7 @@ def html_visit_mermaid_inheritance(
                 urls[child["reftitle"]] = child.get("refuri")
         elif child.get("refid") is not None:
             if mermaid_output_format == "SVG":
-                urls[child["reftitle"]] = (
-                    "../" + current_filename + "#" + child.get("refid")
-                )
+                urls[child["reftitle"]] = "../" + current_filename + "#" + child.get("refid")
             else:
                 urls[child["reftitle"]] = "#" + child.get("refid")
     dotcode = graph.generate_dot(name, urls, env=self.builder.env)
@@ -251,9 +248,7 @@ def html_visit_mermaid_inheritance(
     raise nodes.SkipNode
 
 
-def latex_visit_mermaid_inheritance(
-    self: LaTeXTranslator, node: inheritance_diagram
-) -> None:
+def latex_visit_mermaid_inheritance(self: LaTeXTranslator, node: inheritance_diagram) -> None:
     """
     Output the graph for LaTeX.  This will insert a PDF.
     """
@@ -271,9 +266,7 @@ def latex_visit_mermaid_inheritance(
     raise nodes.SkipNode
 
 
-def texinfo_visit_mermaid_inheritance(
-    self: TexinfoTranslator, node: inheritance_diagram
-) -> None:
+def texinfo_visit_mermaid_inheritance(self: TexinfoTranslator, node: inheritance_diagram) -> None:
     """
     Output the graph for Texinfo.  This will insert a PNG.
     """
@@ -291,7 +284,7 @@ def texinfo_visit_mermaid_inheritance(
     raise nodes.SkipNode
 
 
-def setup(app: Sphinx) -> Dict[str, Any]:
+def setup(app: Sphinx) -> dict[str, Any]:
     app.setup_extension("mermaid")
     app.add_node(
         mermaid_inheritance,

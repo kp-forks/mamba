@@ -32,7 +32,7 @@ Quickstarts
     config                      Configuration of micromamba
     info                        Information about micromamba
     constructor                 Commands to support using micromamba in constructor
-    env                         List environments
+    env                         See `mamba/micromamba env --help`
     activate                    Activate an environment
     run                         Run an executable in an environment
     ps                          Show, inspect or kill running processes
@@ -156,7 +156,7 @@ More powerful are ``YAML`` files like the following, because they already contai
   dependencies:
     - python >=3.6,<3.7
     - ipykernel >=5.1
-    - ipywidgets
+    - ipywidgets[build_number=!=0]
 
 They are used the same way as text files:
 
@@ -167,8 +167,8 @@ They are used the same way as text files:
 .. note::
   CLI options will keep :ref:`precedence<precedence-resolution>` over *target prefix* or *channels* specified in spec files.
 
-.. warning::
-  ``YAML`` spec files do not allow multiple files.
+.. note::
+  You can pass multiple ``YAML`` spec files by repeating the ``-f,--file`` argument.
 
 Explicit spec files
 *******************
@@ -267,6 +267,8 @@ These files are named ``conda-lock.yml`` by default, and look like:
         sha256: 0cf1bb3d0bfc5519b60af2c360fa4888fb838e1476b1e0f65b9dbc48b45c7345
       category: main
       optional: false
+
+In order to YAML files to be considered as ``conda-lock`` files, their name must ends with ``-lock.yml`` or ``-lock.yaml``.
 
 To install such a file with ``micromamba``, just pass the ``-f`` flag again:
 

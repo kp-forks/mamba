@@ -4,85 +4,98 @@
 //
 // The full license is in the file LICENSE, distributed with this software.
 
-#include <stdexcept>
-
-#include <fmt/format.h>
-
 #include "mamba/specs/authentication_info.hpp"
 #include "mamba/util/string.hpp"
+#include "mamba/util/tuple_hash.hpp"
 
 namespace mamba::specs
 {
-
-    auto AuthenticationDataBase::at_compatible(const key_type& key) -> mapped_type&
+    namespace
     {
-        if (auto it = find_compatible(key); it != end())
+        auto attrs(const BasicHTTPAuthentication& auth)
         {
-            return it->second;
+            return std::tie(auth.user, auth.password);
         }
-        throw std::out_of_range(fmt::format(R"(No entry for key "{}")", key));
     }
 
-    auto AuthenticationDataBase::at_compatible(const key_type& key) const -> const mapped_type&
+    auto operator==(const BasicHTTPAuthentication& a, const BasicHTTPAuthentication& b) -> bool
     {
-        return const_cast<AuthenticationDataBase*>(this)->at_compatible(key);
+        return attrs(a) == attrs(b);
     }
 
-    auto AuthenticationDataBase::find_compatible(const key_type& key) -> iterator
+    auto operator!=(const BasicHTTPAuthentication& a, const BasicHTTPAuthentication& b) -> bool
     {
-        // First we start by adding a final '/' if absent, so that "mamba.org/" can
-        // be find by query "mamba.org".
-        std::string maybe_key = {};
-        if (!util::ends_with(key, '/'))
+        return !(a == b);
+    }
+
+    auto operator==(const BearerToken& a, const BearerToken& b) -> bool
+    {
+        return a.token == b.token;
+    }
+
+    auto operator!=(const BearerToken& a, const BearerToken& b) -> bool
+    {
+        return !(a == b);
+    }
+
+    auto operator==(const CondaToken& a, const CondaToken& b) -> bool
+    {
+        return a.token == b.token;
+    }
+
+    auto operator!=(const CondaToken& a, const CondaToken& b) -> bool
+    {
+        return !(a == b);
+    }
+
+    auto URLWeakener::make_first_key(std::string_view key) const -> std::string
+    {
+        if (util::ends_with(key, '/'))
         {
-            maybe_key = util::concat(key, '/');
+            return std::string(key);
+        }
+        return util::concat(key, '/');
+    }
+
+    auto URLWeakener::weaken_key(std::string_view key) const -> std::optional<std::string_view>
+    {
+        const auto pos = key.rfind('/');
+        if (key.empty() || (pos == std::string::npos))
+        {
+            // Nothing else to try
+            return std::nullopt;
+        }
+        else if ((pos + 1) == key.size())
+        {
+            // Try again without final '/'
+            return { key.substr(0, pos) };
         }
         else
         {
-            maybe_key = key;
+            // Try again without final element
+            return { key.substr(0, pos + 1) };
         }
-
-        // We look for successsive parent dirs as queries with and without trailing '/';
-        // "mamba.org/channel/" > "mamba.org/channel" > "mamba.org/" > "mamba.org"
-        auto it = Base::find(maybe_key);
-        while (it == Base::end())
-        {
-            const auto pos = maybe_key.rfind('/');
-            if (maybe_key.empty() || (pos == std::string::npos))
-            {
-                // Nothing else to try
-                break;
-            }
-            else if ((pos + 1) == maybe_key.size())
-            {
-                // Try again without final '/'
-                maybe_key.erase(pos);
-                it = Base::find(maybe_key);
-            }
-            else
-            {
-                // Try again without final element
-                maybe_key.erase(pos + 1);
-                it = Base::find(maybe_key);
-            }
-        }
-        return it;
     }
+}
 
-    auto AuthenticationDataBase::find_compatible(const key_type& key) const -> const_iterator
-    {
-        return static_cast<const_iterator>(
-            const_cast<AuthenticationDataBase*>(this)->find_compatible(key)
-        );
-    }
+auto
+std::hash<mamba::specs::BasicHTTPAuthentication>::operator()(
+    const mamba::specs::BasicHTTPAuthentication& auth
+) const -> std::size_t
+{
+    return mamba::util::hash_tuple(mamba::specs::attrs(auth));
+}
 
-    auto AuthenticationDataBase::contains(const key_type& key) const -> bool
-    {
-        return find(key) != end();
-    }
+auto
+std::hash<mamba::specs::BearerToken>::operator()(const mamba::specs::BearerToken& auth) const
+    -> std::size_t
+{
+    return std::hash<std::string>{}(auth.token);
+}
 
-    auto AuthenticationDataBase::contains_compatible(const key_type& key) const -> bool
-    {
-        return find_compatible(key) != end();
-    }
+auto
+std::hash<mamba::specs::CondaToken>::operator()(const mamba::specs::CondaToken& auth) const
+    -> std::size_t
+{
+    return std::hash<std::string>{}(auth.token);
 }

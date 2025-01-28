@@ -49,11 +49,9 @@ extern "C"
 #endif
 
 #include <nlohmann/json.hpp>
-#include <openssl/evp.h>
 #include <tl/expected.hpp>
 
 #include "mamba/core/context.hpp"
-#include "mamba/core/environment.hpp"
 #include "mamba/core/error_handling.hpp"
 #include "mamba/core/execution.hpp"
 #include "mamba/core/invoke.hpp"
@@ -62,11 +60,11 @@ extern "C"
 #include "mamba/core/thread_utils.hpp"
 #include "mamba/core/util.hpp"
 #include "mamba/core/util_os.hpp"
-#include "mamba/core/util_random.hpp"
 #include "mamba/fs/filesystem.hpp"
 #include "mamba/util/build.hpp"
 #include "mamba/util/compare.hpp"
 #include "mamba/util/environment.hpp"
+#include "mamba/util/random.hpp"
 #include "mamba/util/string.hpp"
 #include "mamba/util/url.hpp"
 
@@ -82,6 +80,7 @@ namespace mamba
     {
         return persist_temporary_files;
     }
+
     bool set_persist_temporary_files(bool new_value)
     {
         return persist_temporary_files.exchange(new_value);
@@ -91,6 +90,7 @@ namespace mamba
     {
         return persist_temporary_directories;
     }
+
     bool set_persist_temporary_directories(bool new_value)
     {
         return persist_temporary_directories.exchange(new_value);
@@ -212,7 +212,7 @@ namespace mamba
 
         do
         {
-            std::string random_file_name = mamba::generate_random_alphanumeric_string(10);
+            std::string random_file_name = util::generate_random_alphanumeric_string(10);
             final_path = temp_path / util::concat(prefix, random_file_name, suffix);
         } while (fs::exists(final_path));
 
@@ -295,12 +295,40 @@ namespace mamba
         std::string line;
         while (std::getline(file_stream, line))
         {
-            // Remove the trailing \r to accomodate Windows line endings.
+            // Remove the trailing \r to accommodate Windows line endings.
             if ((!line.empty()) && (line.back() == '\r'))
             {
                 line.pop_back();
             }
 
+            // Remove leading and trailing whitespace in place not to create a new string.
+            util::inplace_strip(line);
+
+            // Skipping empty lines
+            if (line.empty())
+            {
+                continue;
+            }
+
+            // Skipping comment lines starting with #
+            if (util::starts_with(line, "#"))
+            {
+                continue;
+            }
+
+            // Skipping comment lines starting with @ BUT headers of explicit environment specs
+            if (util::starts_with(line, "@"))
+            {
+                auto is_explicit_header = util::starts_with(line, "@EXPLICIT");
+
+                if (is_explicit_header)
+                {
+                    output.push_back(line);
+                }
+                continue;
+            }
+
+            // By default, add the line to the output (MatchSpecs, etc.)
             output.push_back(line);
         }
         file_stream.close();
@@ -330,19 +358,6 @@ namespace mamba
             name = file;
             extension = "";
         }
-    }
-
-    fs::u8path strip_package_extension(const std::string& file)
-    {
-        std::string name, extension;
-        split_package_extension(file, name, extension);
-
-        if (extension == "")
-        {
-            throw std::runtime_error("Cannot strip file extension from: " + file);
-        }
-
-        return name;
     }
 
     std::string quote_for_shell(const std::vector<std::string>& arguments, const std::string& shell)
@@ -379,7 +394,7 @@ namespace mamba
                 bs_buf.clear();
                 if (!result.empty())
                 {
-                    // seperate arguments
+                    // separate arguments
                     result += " ";
                 }
 
@@ -464,7 +479,7 @@ namespace mamba
     std::size_t clean_trash_files(const fs::u8path& prefix, bool deep_clean)
     {
         std::size_t deleted_files = 0;
-        std::size_t remainig_trash = 0;
+        std::size_t remaining_trash = 0;
         std::error_code ec;
         std::vector<fs::u8path> remaining_files;
         auto trash_txt = prefix / "conda-meta" / "mamba_trash.txt";
@@ -482,7 +497,7 @@ namespace mamba
                 else
                 {
                     LOG_INFO << "Trash: could not remove " << full_path;
-                    remainig_trash += 1;
+                    remaining_trash += 1;
                     // save relative path
                     remaining_files.push_back(f);
                 }
@@ -509,7 +524,7 @@ namespace mamba
                 }
                 else
                 {
-                    remainig_trash += 1;
+                    remaining_trash += 1;
                     // save relative path
                     remaining_files.push_back(fs::relative(p, prefix));
                 }
@@ -532,7 +547,7 @@ namespace mamba
             }
         }
 
-        LOG_INFO << "Cleaned " << deleted_files << " .mamba_trash files. " << remainig_trash
+        LOG_INFO << "Cleaned " << deleted_files << " .mamba_trash files. " << remaining_trash
                  << " remaining.";
         return deleted_files;
     }
@@ -669,7 +684,6 @@ namespace mamba
         return prepend(p.c_str(), start, newline);
     }
 
-
     class LockFileOwner
     {
     public:
@@ -736,9 +750,18 @@ namespace mamba
         , m_locked(false)
     {
         std::error_code ec;
+
+        // Check if `path` exists
         if (!fs::exists(path, ec))
         {
-            throw_lock_error(fmt::format("Could not lock non-existing path '{}'", path.string()));
+            // If `path` doesn't exist, consider creating the directory
+            // (and its parents if they don't exist)
+            if (!fs::create_directories(path, ec))
+            {
+                throw_lock_error(
+                    fmt::format("Could not create directory '{}': {}", path.string(), ec.message())
+                );
+            }
         }
 
         if (fs::is_directory(path))
@@ -976,6 +999,13 @@ namespace mamba
                       << "'";
         }
 
+// This function is only used in `assert()` expressions
+// That's why it might get reported as unused in Release builds
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
+
         bool is_lockfile_locked(const LockFileOwner& lockfile)
         {
 #ifdef _WIN32
@@ -985,6 +1015,10 @@ namespace mamba
             return LockFile::is_locked(lockfile.fd());
 #endif
         }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
         class LockedFilesRegistry
         {
@@ -1000,6 +1034,7 @@ namespace mamba
             {
                 return m_is_file_locking_allowed;
             }
+
             bool allow_file_locking(bool allow)
             {
                 return m_is_file_locking_allowed.exchange(allow);
@@ -1009,6 +1044,7 @@ namespace mamba
             {
                 return m_default_lock_timeout;
             }
+
             std::chrono::seconds set_file_locking_timeout(const std::chrono::seconds& new_timeout)
             {
                 return m_default_lock_timeout.exchange(new_timeout);
@@ -1124,6 +1160,7 @@ namespace mamba
     {
         return files_locked_by_this_process.default_file_locking_timeout();
     }
+
     std::chrono::seconds set_file_locking_timeout(const std::chrono::seconds& new_timeout)
     {
         return files_locked_by_this_process.set_file_locking_timeout(new_timeout);
@@ -1345,11 +1382,10 @@ namespace mamba
         return infile;
     }
 
-
     WrappedCallOptions WrappedCallOptions::from_context(const Context& context)
     {
         return {
-            /* .is_micromamba = */ context.command_params.is_micromamba,
+            /* .is_mamba_exe = */ context.command_params.is_mamba_exe,
             /* .dev_mode = */ context.dev,
             /* .debug_wrapper_scripts = */ false,
         };
@@ -1373,7 +1409,7 @@ namespace mamba
         // TODO
         std::string CONDA_PACKAGE_ROOT = "";
 
-        std::string bat_name = options.is_micromamba ? "micromamba.bat" : "conda.bat";
+        std::string bat_name = get_self_exe_path().stem().string();
 
         if (options.dev_mode)
         {
@@ -1384,7 +1420,7 @@ namespace mamba
             conda_bat = util::get_env("CONDA_BAT")
                             .value_or((fs::absolute(root_prefix) / "condabin" / bat_name).string());
         }
-        if (!fs::exists(conda_bat) && options.is_micromamba)
+        if (!fs::exists(conda_bat) && options.is_mamba_exe)
         {
             // this adds in the needed .bat files for activation
             init_root_prefix_cmdexe(context, root_prefix);
@@ -1412,9 +1448,8 @@ namespace mamba
             // 'python -m conda'
             // *with* PYTHONPATH set.
             out << silencer << "SET PYTHONPATH=" << CONDA_PACKAGE_ROOT << "\n";
-            out << silencer << "SET CONDA_EXE="
-                << "python.exe"
-                << "\n";  // TODO this should be `sys.executable`
+            out << silencer << "SET CONDA_EXE=" << "python.exe" << "\n";  // TODO this should be
+                                                                          // `sys.executable`
             out << silencer << "SET _CE_M=-m\n";
             out << silencer << "SET _CE_CONDA=conda\n";
         }
@@ -1440,7 +1475,7 @@ namespace mamba
 
         std::string shebang, dev_arg;
 
-        if (!options.is_micromamba)
+        if (!options.is_mamba_exe)
         {
             // During tests, we sometimes like to have a temp env with e.g. an old python
             // in it and have it run tests against the very latest development sources.
@@ -1475,7 +1510,7 @@ namespace mamba
         {
             // Micromamba hook
             out << "export MAMBA_EXE=" << std::quoted(get_self_exe_path().string(), '\'') << "\n";
-            hook_quoted << "$MAMBA_EXE 'shell' 'hook' '-s' 'bash' '-r' "
+            hook_quoted << "\"$MAMBA_EXE\" 'shell' 'hook' '-s' 'bash' '-r' "
                         << std::quoted(root_prefix.string(), '\'');
         }
         if (options.debug_wrapper_scripts)
@@ -1487,13 +1522,14 @@ namespace mamba
         }
         out << "eval \"$(" << hook_quoted.str() << ")\"\n";
 
-        if (!options.is_micromamba)
+        if (!options.is_mamba_exe)
         {
             out << "conda activate " << dev_arg << " " << std::quoted(prefix.string()) << "\n";
         }
         else
         {
-            out << "micromamba activate " << std::quoted(prefix.string()) << "\n";
+            out << get_self_exe_path().stem().string() << " activate "
+                << std::quoted(prefix.string()) << "\n";
         }
 
 
@@ -1541,10 +1577,10 @@ namespace mamba
         else
         {
             // shell_path = 'sh' if 'bsd' in sys.platform else 'bash'
-            fs::u8path shell_path = env::which("bash");
+            fs::u8path shell_path = util::which("bash");
             if (shell_path.empty())
             {
-                shell_path = env::which("sh");
+                shell_path = util::which("sh");
             }
             if (shell_path.empty())
             {
@@ -1570,43 +1606,6 @@ namespace mamba
         return util::ends_with(filename, ".yml") || util::ends_with(filename, ".yaml");
     }
 
-    tl::expected<std::string, mamba_error> encode_base64(std::string_view input)
-    {
-        const auto pl = 4 * ((input.size() + 2) / 3);
-        std::vector<unsigned char> output(pl + 1);
-        const auto ol = EVP_EncodeBlock(
-            output.data(),
-            reinterpret_cast<const unsigned char*>(input.data()),
-            static_cast<int>(input.size())
-        );
-
-        if (util::cmp_not_equal(pl, ol))
-        {
-            return make_unexpected("Could not encode base64 string", mamba_error_code::openssl_failed);
-        }
-
-        return std::string(reinterpret_cast<const char*>(output.data()));
-    }
-
-    tl::expected<std::string, mamba_error> decode_base64(std::string_view input)
-    {
-        const auto pl = 3 * input.size() / 4;
-
-        std::vector<unsigned char> output(pl + 1);
-        const auto ol = EVP_DecodeBlock(
-            output.data(),
-            reinterpret_cast<const unsigned char*>(input.data()),
-            static_cast<int>(input.size())
-        );
-        if (util::cmp_not_equal(pl, ol))
-        {
-            return make_unexpected("Could not decode base64 string", mamba_error_code::openssl_failed);
-        }
-
-        return std::string(reinterpret_cast<const char*>(output.data()));
-    }
-
-
     std::optional<std::string>
     proxy_match(const std::string& url, const std::map<std::string, std::string>& proxy_servers)
     {
@@ -1617,7 +1616,7 @@ namespace mamba
             return std::nullopt;
         }
 
-        const auto url_parsed = util::URL::parse(url);
+        const auto url_parsed = util::URL::parse(url).value();
         auto scheme = url_parsed.scheme();
         auto host = url_parsed.host();
         std::vector<std::string> options;

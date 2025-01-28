@@ -10,29 +10,30 @@
 #include <array>
 #include <string>
 
-#define LIBMAMBA_VERSION_MAJOR 1
-#define LIBMAMBA_VERSION_MINOR 5
-#define LIBMAMBA_VERSION_PATCH 1
+#define LIBMAMBA_VERSION_MAJOR 2
+#define LIBMAMBA_VERSION_MINOR 0
+#define LIBMAMBA_VERSION_PATCH 6
+#define LIBMAMBA_VERSION_IS_PRERELEASE 1
+#if LIBMAMBA_VERSION_IS_PRERELEASE == 1
+#define LIBMAMBA_VERSION_PRERELEASE_NAME "rc1"
+#endif
+
+#define LIBMAMBA_VERSION_STRING "2.0.6.rc1"
+#define LIBMAMBA_VERSION                                                                           \
+    (LIBMAMBA_VERSION_MAJOR * 10000 + LIBMAMBA_VERSION_MINOR * 100 + LIBMAMBA_VERSION_PATCH)
 
 // Binary version
 #define LIBMAMBA_BINARY_CURRENT 2
 #define LIBMAMBA_BINARY_REVISION 0
 #define LIBMAMBA_BINARY_AGE 0
 
-#define __LIBMAMBA_STRINGIZE_IMPL(s) #s
-#define __LIBMAMBA_STRINGIZE(s) __LIBMAMBA_STRINGIZE_IMPL(s)
-
-#define LIBMAMBA_VERSION                                                                           \
-    (LIBMAMBA_VERSION_MAJOR * 10000 + LIBMAMBA_VERSION_MINOR * 100 + LIBMAMBA_VERSION_PATCH)
-#define LIBMAMBA_VERSION_STRING                                                                    \
-    __LIBMAMBA_STRINGIZE(LIBMAMBA_VERSION_MAJOR)                                                   \
-    "." __LIBMAMBA_STRINGIZE(LIBMAMBA_VERSION_MINOR) "." __LIBMAMBA_STRINGIZE(LIBMAMBA_VERSION_PATCH)
-
 namespace mamba
 {
     std::string version();
 
+    [[deprecated("will be replaced in a future minor version")]]
     std::array<int, 3> version_arr();
+
 }
 
 #endif

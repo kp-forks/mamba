@@ -15,24 +15,24 @@
 
 #include <tl/expected.hpp>
 
+#include "mamba/core/error_handling.hpp"
+#include "mamba/core/fsutil.hpp"
 #include "mamba/fs/filesystem.hpp"
-
-#include "error_handling.hpp"
-#include "fsutil.hpp"
-#include "package_info.hpp"
+#include "mamba/specs/package_info.hpp"
 
 namespace mamba
 {
+    class Context;
     class ChannelContext;
 
     enum class file_parsing_error_code
     {
-        unknown_failure,     /// Something failed while parsing but we can't identify what.
-        unsuported_version,  /// The version of the file does not matched supported ver.
-        parsing_failure,     /// The content of the file doesnt match the expected format/language
-                             /// structure or constraints.
-        invalid_data,        /// The structure of the data in the file is fine but some fields have
-                             /// invalid values for our purpose.
+        unknown_failure,      /// Something failed while parsing but we can't identify what.
+        unsupported_version,  /// The version of the file does not matched supported ver.
+        parsing_failure,      /// The content of the file doesnt match the expected format/language
+                              /// structure or constraints.
+        invalid_data,         /// The structure of the data in the file is fine but some fields have
+                              /// invalid values for our purpose.
     };
 
     struct EnvLockFileError
@@ -78,7 +78,7 @@ namespace mamba
 
         struct Package
         {
-            mamba::PackageInfo info;
+            specs::PackageInfo info;
             bool is_optional = false;
             std::string category;
             std::string manager;
@@ -91,7 +91,7 @@ namespace mamba
         {
         }
 
-        std::vector<PackageInfo>
+        std::vector<specs::PackageInfo>
         get_packages_for(std::string_view category, std::string_view platform, std::string_view manager)
             const;
 
@@ -99,6 +99,7 @@ namespace mamba
         {
             return m_packages;
         }
+
         const Meta& get_metadata() const
         {
             return m_metadata;
@@ -113,7 +114,7 @@ namespace mamba
     /// Read an environment lock YAML file and returns it's structured content or an error if
     /// failed.
     tl::expected<EnvironmentLockFile, mamba_error>
-    read_environment_lockfile(ChannelContext& channel_context, const mamba::fs::u8path& lockfile_location);
+    read_environment_lockfile(const mamba::fs::u8path& lockfile_location);
 
 
     /// Returns `true` if the filename matches names of files which should be interpreted as conda

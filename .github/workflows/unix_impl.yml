@@ -23,7 +23,7 @@ jobs:
       - name: Checkout mamba repository
         uses: actions/checkout@v4
       - name: Create build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ./dev/environment-dev.yml
           environment-name: build_env
@@ -39,7 +39,9 @@ jobs:
           cmake -B build/ -G Ninja \
             --preset mamba-unix-shared-${{ inputs.build_type }}  \
             -D CMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -D CMAKE_C_COMPILER_LAUNCHER=sccache
+            -D CMAKE_C_COMPILER_LAUNCHER=sccache \
+            -D BUILD_LIBMAMBAPY=OFF \
+            -D ENABLE_MAMBA_ROOT_PREFIX_FALLBACK=OFF
           cmake --build build/ --parallel
       - name: Show build cache statistics
         run: sccache --show-stats
@@ -55,7 +57,7 @@ jobs:
           key_suffix: ${{ inputs.os }}-${{ inputs.build_type }}
 
   libmamba_tests_unix:
-    name: Test libmamba
+    name: libmamba tests
     needs: ["build_shared_unix"]
     runs-on: ${{ inputs.os }}
     steps:
@@ -68,17 +70,20 @@ jobs:
           path: build/
           key_suffix: ${{ inputs.os }}-${{ inputs.build_type }}
       - name: Create build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ./build/environment.lock
           environment-name: build_env
+      - name: Run solv-cpp tests
+        run: |
+          ./build/libmamba/ext/solv-cpp/tests/test_solv_cpp
       - name: Run libmamba tests
         run: |
           unset CONDARC  # Interferes with tests
           ./build/libmamba/tests/test_libmamba
 
   libmambapy_tests_unix:
-    name: Test libmamba Python bindings
+    name: libmambapy tests
     needs: ["build_shared_unix"]
     runs-on: ${{ inputs.os }}
     steps:
@@ -91,21 +96,21 @@ jobs:
           path: build/
           key_suffix: ${{ inputs.os }}-${{ inputs.build_type }}
       - name: Create build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ./build/environment.lock
           environment-name: build_env
       - name: Install libmambapy
         run: |
-          ln build/libmambapy/bindings* libmambapy/libmambapy/
           cmake --install build/ --prefix "${CONDA_PREFIX}"
-          python -m pip install ./libmambapy/
+          # TODO add some ccache and parallelism to builds
+          python -m pip install --no-deps --no-build-isolation ./libmambapy
       - name: Run libmamba Python bindings tests
         run: |
-          python -m pytest libmambapy/tests/
+          python -m pytest libmambapy/tests/ ${{ runner.debug == 'true' && '-v' || '--exitfirst' }}
 
-  umamba_integration_tests_unix:
-    name: Test integration micromamba
+  mamba_integration_tests_unix:
+    name: mamba integration tests
     needs: ["build_shared_unix"]
     runs-on: ${{ inputs.os }}
     steps:
@@ -118,7 +123,7 @@ jobs:
           path: build/
           key_suffix: ${{ inputs.os }}-${{ inputs.build_type }}
       - name: Create build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ./build/environment.lock
           environment-name: build_env
@@ -126,12 +131,65 @@ jobs:
         if: startsWith(inputs.os, 'ubuntu')
         run: |
           sudo apt-get install zsh xonsh fish tcsh -y
-      - name: install xonsh and fish in mac
+      - name: Install xonsh and fish in mac
         if: startsWith(inputs.os, 'macos')
         run: |
           brew install fish xonsh
-      - name: micromamba python based tests
+      - name: Diagnose CURL/DNS issue
         run: |
-          export TEST_MAMBA_EXE=$(pwd)/build/micromamba/micromamba
+          echo 'ping -c 3 conda.anaconda.org'
+          ping -c 3 conda.anaconda.org || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'ping -c 3 repo.mamba.pm'
+          ping -c 3 repo.mamba.pm || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'nslookup conda.anaconda.org'
+          nslookup conda.anaconda.org || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'nslookup repo.mamba.pm'
+          nslookup repo.mamba.pm || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'which curl'
+          which curl  || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'curl -I -vvvv https://conda.anaconda.org/conda-forge/noarch/repodata.json'
+          curl -I -vvv https://conda.anaconda.org/conda-forge/noarch/repodata.json || echo 'FAILED'
+          echo '--------------------------------------------------'
+          echo 'curl -I -vvvv https://repo.mamba.pm/conda-forge/noarch/repodata.json'
+          curl -I -vvv https://repo.mamba.pm/conda-forge/noarch/repodata.json || echo 'FAILED'
+
+      - name: mamba python based tests
+        run: |
+          export TEST_MAMBA_EXE=$(pwd)/build/micromamba/mamba
           unset CONDARC  # Interferes with tests
-          pytest -v --capture=tee-sys micromamba/tests/
+          python -m pytest micromamba/tests/ \
+            ${{ runner.debug == 'true' && '-v --capture=tee-sys' || '--exitfirst' }}
+
+  verify_pkg_tests:
+    name: mamba-content-trust tests
+    needs: ["build_shared_unix"]
+    runs-on: ${{ inputs.os }}
+    if: startsWith(inputs.os, 'ubuntu')
+    steps:
+      - name: Checkout mamba repository
+        uses: actions/checkout@v4
+      - name: Restore workspace
+        uses: ./.github/actions/workspace
+        with:
+          action: restore
+          path: build/
+          key_suffix: ${{ inputs.os }}-${{ inputs.build_type }}
+      - name: Create build environment
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ./build/environment.lock
+          environment-name: build_env
+      - name: Run tests using conda-content-trust (server side)
+        shell: bash -l {0} -euo pipefail -x
+        run: |
+          export TEST_MAMBA_EXE=$(pwd)/build/micromamba/mamba
+          export MAMBA_ROOT_PREFIX="${HOME}/micromamba"
+          unset CONDARC  # Interferes with tests
+          cd micromamba/test-server
+          ./generate_gpg_keys.sh
+          ./testserver_pkg_signing.sh

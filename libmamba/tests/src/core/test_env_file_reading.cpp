@@ -4,17 +4,16 @@
 //
 // The full license is in the file LICENSE, distributed with this software.
 
-#include <doctest/doctest.h>
+#include <catch2/catch_all.hpp>
 
 #include "mamba/api/install.hpp"
 #include "mamba/util/build.hpp"
 
 #include "mambatests.hpp"
-#include "test_data.hpp"
 
 namespace mamba
 {
-    TEST_SUITE("env_file_reading")
+    namespace
     {
         TEST_CASE("selector")
         {
@@ -22,25 +21,25 @@ namespace mamba
             using namespace detail;
             if constexpr (util::on_linux || util::on_mac)
             {
-                CHECK(eval_selector("sel(unix)", context.platform));
+                REQUIRE(eval_selector("sel(unix)", context.platform));
                 if (util::on_mac)
                 {
-                    CHECK(eval_selector("sel(osx)", context.platform));
-                    CHECK_FALSE(eval_selector("sel(linux)", context.platform));
-                    CHECK_FALSE(eval_selector("sel(win)", context.platform));
+                    REQUIRE(eval_selector("sel(osx)", context.platform));
+                    REQUIRE_FALSE(eval_selector("sel(linux)", context.platform));
+                    REQUIRE_FALSE(eval_selector("sel(win)", context.platform));
                 }
                 else
                 {
-                    CHECK(eval_selector("sel(linux)", context.platform));
-                    CHECK_FALSE(eval_selector("sel(osx)", context.platform));
-                    CHECK_FALSE(eval_selector("sel(win)", context.platform));
+                    REQUIRE(eval_selector("sel(linux)", context.platform));
+                    REQUIRE_FALSE(eval_selector("sel(osx)", context.platform));
+                    REQUIRE_FALSE(eval_selector("sel(win)", context.platform));
                 }
             }
             else if (util::on_win)
             {
-                CHECK(eval_selector("sel(win)", context.platform));
-                CHECK_FALSE(eval_selector("sel(osx)", context.platform));
-                CHECK_FALSE(eval_selector("sel(linux)", context.platform));
+                REQUIRE(eval_selector("sel(win)", context.platform));
+                REQUIRE_FALSE(eval_selector("sel(osx)", context.platform));
+                REQUIRE_FALSE(eval_selector("sel(linux)", context.platform));
             }
         }
 
@@ -48,39 +47,48 @@ namespace mamba
         {
             const auto& context = mambatests::context();
             using V = std::vector<std::string>;
-            auto res = detail::read_yaml_file(test_data_dir / "env_file/env_1.yaml", context.platform);
-            CHECK_EQ(res.name, "env_1");
-            CHECK_EQ(res.channels, V({ "conda-forge", "bioconda" }));
-            CHECK_EQ(res.dependencies, V({ "test1", "test2", "test3" }));
-            CHECK_FALSE(res.others_pkg_mgrs_specs.size());
+            auto res = detail::read_yaml_file(
+                mambatests::test_data_dir / "env_file/env_1.yaml",
+                context.platform
+            );
+            REQUIRE(res.name == "env_1");
+            REQUIRE(res.channels == V({ "conda-forge", "bioconda" }));
+            REQUIRE(res.dependencies == V({ "test1", "test2", "test3" }));
+            REQUIRE_FALSE(res.others_pkg_mgrs_specs.size());
 
-            auto res2 = detail::read_yaml_file(test_data_dir / "env_file/env_2.yaml", context.platform);
-            CHECK_EQ(res2.name, "env_2");
-            CHECK_EQ(res2.channels, V({ "conda-forge", "bioconda" }));
+            auto res2 = detail::read_yaml_file(
+                mambatests::test_data_dir / "env_file/env_2.yaml",
+                context.platform
+            );
+            REQUIRE(res2.name == "env_2");
+            REQUIRE(res2.channels == V({ "conda-forge", "bioconda" }));
 #ifdef __linux__
-            CHECK_EQ(res2.dependencies, V({ "test1-unix", "test1-linux", "test2-linux", "test4" }));
+            REQUIRE(res2.dependencies == V({ "test1-unix", "test1-linux", "test2-linux", "test4" }));
 #elif __APPLE__
-            CHECK_EQ(res2.dependencies, V({ "test1-unix", "test1-osx", "test4" }));
+            REQUIRE(res2.dependencies == V({ "test1-unix", "test1-osx", "test4" }));
 #elif _WIN32
-            CHECK_EQ(res2.dependencies, V({ "test1-win", "test4" }));
+            REQUIRE(res2.dependencies == V({ "test1-win", "test4" }));
 #endif
-            CHECK_FALSE(res2.others_pkg_mgrs_specs.size());
+            REQUIRE_FALSE(res2.others_pkg_mgrs_specs.size());
         }
 
         TEST_CASE("external_pkg_mgrs")
         {
             const auto& context = mambatests::context();
             using V = std::vector<std::string>;
-            auto res = detail::read_yaml_file(test_data_dir / "env_file/env_3.yaml", context.platform);
-            CHECK_EQ(res.name, "env_3");
-            CHECK_EQ(res.channels, V({ "conda-forge", "bioconda" }));
-            CHECK_EQ(res.dependencies, V({ "test1", "test2", "test3", "pip" }));
+            auto res = detail::read_yaml_file(
+                mambatests::test_data_dir / "env_file/env_3.yaml",
+                context.platform
+            );
+            REQUIRE(res.name == "env_3");
+            REQUIRE(res.channels == V({ "conda-forge", "bioconda" }));
+            REQUIRE(res.dependencies == V({ "test1", "test2", "test3", "pip" }));
 
-            CHECK_EQ(res.others_pkg_mgrs_specs.size(), 1);
+            REQUIRE(res.others_pkg_mgrs_specs.size() == 1);
             auto o = res.others_pkg_mgrs_specs[0];
-            CHECK_EQ(o.pkg_mgr, "pip");
-            CHECK_EQ(o.deps, V({ "pytest", "numpy" }));
-            CHECK_EQ(o.cwd, fs::absolute(test_data_dir / "env_file"));
+            REQUIRE(o.pkg_mgr == "pip");
+            REQUIRE(o.deps == V({ "pytest", "numpy" }));
+            REQUIRE(o.cwd == fs::absolute(mambatests::test_data_dir / "env_file"));
         }
     }
 

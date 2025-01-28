@@ -4,8 +4,9 @@ dependencies:
   # libmamba build dependencies
   - cxx-compiler
   - cmake >=3.16
-  - pkg-config  # Used by some CMake dependencies
+  - pkg-config # Used by some CMake dependencies
   - ninja
+  - make # not always present
   # libmamba dependencies
   - cpp-expected
   - fmt
@@ -20,28 +21,35 @@ dependencies:
   - yaml-cpp >=0.8.0
   - sel(win): winreg
   # libmamba test dependencies
-  - doctest
+  - catch2
   # micromamba dependencies
   - cli11 >=2.2
   # micromamba test dependencies
+  - python
   - mitmproxy
   - pytest >=7.3.0
   - pytest-asyncio
-  - pytest-lazy-fixture
+  - pytest-timeout
   - pytest-xprocess
+  - memory_profiler
   - requests
   - sel(win): pywin32
   - sel(win): menuinst
-  - conda-index
   - conda-content-trust
   - conda-package-handling
-  - cryptography<40.0  # Or breaks conda-content-trust
-  - pip:
-    - securesystemslib
+  - cryptography
+  - securesystemslib
   # libmambapy build dependencies
+  - scikit-build
   - pybind11-stubgen <1.0
   # libmambapy dependencies
   - python
   - pybind11
   # dev dependencies
   - pre-commit
+  # Documentation dependencies
+  - doxygen
+  - breathe
+  - sphinx
+  - sphinx-book-theme
+  - myst-parser

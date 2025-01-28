@@ -6,26 +6,29 @@
 
 #include "mamba/api/configuration.hpp"
 #include "mamba/api/remove.hpp"
-#include "mamba/core/channel.hpp"
+#include "mamba/core/channel_context.hpp"
 #include "mamba/core/output.hpp"
 #include "mamba/core/package_cache.hpp"
-#include "mamba/core/pool.hpp"
+#include "mamba/core/package_database_loader.hpp"
 #include "mamba/core/prefix_data.hpp"
-#include "mamba/core/repo.hpp"
-#include "mamba/core/solver.hpp"
 #include "mamba/core/transaction.hpp"
+#include "mamba/solver/libsolv/repo_info.hpp"
+#include "mamba/solver/libsolv/solver.hpp"
+#include "mamba/solver/request.hpp"
 
 namespace mamba
 {
-    void remove(Configuration& config, int flags)
+    RemoveResult remove(Configuration& config, int flags)
     {
+        auto& ctx = config.context();
+
         bool prune = flags & MAMBA_REMOVE_PRUNE;
         bool force = flags & MAMBA_REMOVE_FORCE;
         bool remove_all = flags & MAMBA_REMOVE_ALL;
 
-        auto& ctx = config.context();
-
         config.at("use_target_prefix_fallback").set_value(true);
+        config.at("use_default_prefix_fallback").set_value(false);
+        config.at("use_root_prefix_fallback").set_value(false);
         config.at("target_prefix_checks")
             .set_value(
                 MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_NOT_ALLOW_MISSING_PREFIX
@@ -35,7 +38,7 @@ namespace mamba
 
         auto remove_specs = config.at("specs").value<std::vector<std::string>>();
 
-        ChannelContext channel_context{ ctx };
+        auto channel_context = ChannelContext::make_conda_compatible(ctx);
 
         if (remove_all)
         {
@@ -43,7 +46,9 @@ namespace mamba
             if (!sprefix_data)
             {
                 // TODO: propagate tl::expected mechanism
-                throw std::runtime_error("could not load prefix data");
+                throw std::runtime_error(
+                    fmt::format("could not load prefix data: {}", sprefix_data.error().what())
+                );
             }
             PrefixData& prefix_data = sprefix_data.value();
             for (const auto& package : prefix_data.records())
@@ -54,25 +59,69 @@ namespace mamba
 
         if (!remove_specs.empty())
         {
-            detail::remove_specs(channel_context, remove_specs, prune, force);
+            return detail::remove_specs(ctx, channel_context, remove_specs, prune, force)
+                       ? RemoveResult::YES
+                       : RemoveResult::NO;
         }
         else
         {
             Console::instance().print("Nothing to do.");
+            return RemoveResult::EMPTY;
+        }
+    }
+
+    namespace
+    {
+        template <typename Range>
+        auto build_remove_request(
+            const Context& ctx,
+            ChannelContext& channel_context,
+            const Range& raw_specs,
+            bool prune
+        ) -> solver::Request
+        {
+            using Request = solver::Request;
+
+            auto request = Request();
+            request.jobs.reserve(raw_specs.size());
+
+            if (prune)
+            {
+                History history(ctx.prefix_params.target_prefix, channel_context);
+                auto hist_map = history.get_requested_specs_map();
+
+                request.jobs.reserve(request.jobs.capacity() + hist_map.size());
+
+                for (auto& [name, spec] : hist_map)
+                {
+                    request.jobs.emplace_back(Request::Keep{ std::move(spec) });
+                }
+            }
+
+            for (const auto& s : raw_specs)
+            {
+                request.jobs.emplace_back(Request::Remove{
+                    specs::MatchSpec::parse(s)
+                        .or_else([](specs::ParseError&& err) { throw std::move(err); })
+                        .value(),
+                    /* .clean_dependencies= */ prune,
+                });
+            }
+
+            return request;
         }
     }
 
     namespace detail
     {
-        void remove_specs(
+        bool remove_specs(
+            Context& ctx,
             ChannelContext& channel_context,
-            const std::vector<std::string>& specs,
+            const std::vector<std::string>& raw_specs,
             bool prune,
             bool force
         )
         {
-            auto& ctx = channel_context.context();
-
             if (ctx.prefix_params.target_prefix.empty())
             {
                 LOG_ERROR << "No active target prefix.";
@@ -87,8 +136,9 @@ namespace mamba
             }
             PrefixData& prefix_data = exp_prefix_data.value();
 
-            MPool pool{ channel_context };
-            MRepo(pool, prefix_data);
+            solver::libsolv::Database pool{ channel_context.params() };
+            add_spdlog_logger_to_database(pool);
+            load_installed_packages_in_database(ctx, pool, prefix_data);
 
             const fs::u8path pkgs_dirs(ctx.prefix_params.root_prefix / "pkgs");
             MultiPackageCache package_caches({ pkgs_dirs }, ctx.validation_params);
@@ -100,62 +150,72 @@ namespace mamba
                     transaction.log_json();
                 }
 
-                if (transaction.prompt())
+                auto prompt_entry = transaction.prompt(ctx, channel_context);
+                if (prompt_entry)
                 {
-                    transaction.execute(prefix_data);
+                    transaction.execute(ctx, channel_context, prefix_data);
                 }
+                return prompt_entry;
             };
 
             if (force)
             {
-                std::vector<MatchSpec> mspecs;
-                mspecs.reserve(specs.size());
-                std::transform(
-                    specs.begin(),
-                    specs.end(),
-                    std::back_inserter(mspecs),
-                    [&](const auto& spec_str) {
-                        return MatchSpec{ spec_str, channel_context };
+                std::vector<specs::PackageInfo> pkgs_to_remove;
+                pkgs_to_remove.reserve(raw_specs.size());
+                for (const auto& str : raw_specs)
+                {
+                    auto spec = specs::MatchSpec::parse(str)
+                                    .or_else([](specs::ParseError&& err) { throw std::move(err); })
+                                    .value();
+                    const auto& installed = prefix_data.records();
+                    // TODO should itreate over all packages and use MatchSpec.contains
+                    // TODO should move such method over Pool for consistent use
+                    if (auto iter = installed.find(spec.name().str()); iter != installed.cend())
+                    {
+                        pkgs_to_remove.push_back(iter->second);
                     }
-                );
-                auto transaction = MTransaction(pool, mspecs, {}, package_caches);
-                execute_transaction(transaction);
+                }
+                auto transaction = MTransaction(ctx, pool, pkgs_to_remove, {}, package_caches);
+                return execute_transaction(transaction);
             }
             else
             {
-                MSolver solver(
-                    pool,
+                auto request = build_remove_request(ctx, channel_context, raw_specs, prune);
+                request.flags = {
+                    /* .keep_dependencies= */ true,
+                    /* .keep_user_specs= */ true,
+                    /* .force_reinstall= */ false,
+                    /* .allow_downgrade= */ true,
+                    /* .allow_uninstall= */ true,
+                    /* .strict_repo_priority= */ ctx.channel_priority == ChannelPriority::Strict,
+                };
+
+                auto outcome = solver::libsolv::Solver().solve(pool, request).value();
+                if (auto* unsolvable = std::get_if<solver::libsolv::UnSolvable>(&outcome))
+                {
+                    if (ctx.output_params.json)
                     {
-                        { SOLVER_FLAG_ALLOW_DOWNGRADE, 1 },
-                        { SOLVER_FLAG_ALLOW_UNINSTALL, 1 },
-                        { SOLVER_FLAG_STRICT_REPO_PRIORITY,
-                          ctx.channel_priority == ChannelPriority::Strict },
+                        Console::instance().json_write(
+                            { { "success", false }, { "solver_problems", unsolvable->problems(pool) } }
+                        );
                     }
+                    throw mamba_error(
+                        "Could not solve for environment specs",
+                        mamba_error_code::satisfiablitity_error
+                    );
+                }
+
+                Console::instance().json_write({ { "success", true } });
+                auto transaction = MTransaction(
+                    ctx,
+                    pool,
+                    request,
+                    std::get<solver::Solution>(outcome),
+                    package_caches
                 );
 
-                History history(ctx.prefix_params.target_prefix, channel_context);
-                auto hist_map = history.get_requested_specs_map();
-                std::vector<std::string> keep_specs;
-                for (auto& it : hist_map)
-                {
-                    keep_specs.push_back(it.second.conda_build_form());
-                }
-
-                solver.add_jobs(keep_specs, SOLVER_USERINSTALLED);
-
-                int solver_flag = SOLVER_ERASE;
-
-                if (prune)
-                {
-                    solver_flag |= SOLVER_CLEANDEPS;
-                }
-
-                solver.add_jobs(specs, solver_flag);
-                solver.must_solve();
-
-                MTransaction transaction(pool, solver, package_caches);
-                execute_transaction(transaction);
+                return execute_transaction(transaction);
             }
         }
     }
-}  // mamba
+}

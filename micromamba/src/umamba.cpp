@@ -5,7 +5,7 @@
 // The full license is in the file LICENSE, distributed with this software.
 
 #include "mamba/api/configuration.hpp"
-#include "mamba/core/channel.hpp"
+#include "mamba/core/channel_context.hpp"
 #include "mamba/core/context.hpp"
 #include "mamba/version.hpp"
 
@@ -62,6 +62,7 @@ set_umamba_command(CLI::App* com, mamba::Configuration& config)
 
     CLI::App* remove_subcom = com->add_subcommand("remove", "Remove packages from active environment");
     set_remove_command(remove_subcom, config);
+    remove_subcom->alias("uninstall");
 
     CLI::App* list_subcom = com->add_subcommand("list", "List packages in active environment");
     set_list_command(list_subcom, config);
@@ -87,7 +88,7 @@ set_umamba_command(CLI::App* com, mamba::Configuration& config)
     );
     set_constructor_command(constructor_subcom, config);
 
-    CLI::App* env_subcom = com->add_subcommand("env", "List environments");
+    CLI::App* env_subcom = com->add_subcommand("env", "See `mamba/micromamba env --help`");
     set_env_command(env_subcom, config);
 
     CLI::App* activate_subcom = com->add_subcommand("activate", "Activate an environment");
@@ -107,12 +108,7 @@ set_umamba_command(CLI::App* com, mamba::Configuration& config)
         "Find packages in active environment or channels\n"
         "This is equivalent to `repoquery search` command"
     );
-    set_search_command(search_subcom, config);
-
-#if !defined(_WIN32) && defined(MICROMAMBA_SERVER)
-    CLI::App* server_subcom = com->add_subcommand("server", "Run micromamba server");
-    set_server_command(server_subcom, config);
-#endif
+    set_repoquery_search_command(search_subcom, config);
 
     com->require_subcommand(/* min */ 0, /* max */ 1);
 }
