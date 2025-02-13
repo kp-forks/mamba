@@ -7,12 +7,14 @@
 #ifndef MAMBA_SPECS_VERSION_HPP
 #define MAMBA_SPECS_VERSION_HPP
 
+#include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
+
+#include "mamba/specs/error.hpp"
 
 namespace mamba::specs
 {
@@ -33,13 +35,13 @@ namespace mamba::specs
         VersionPartAtom(std::size_t numeral, std::string_view literal);
         // The use of a template is only meant to prevent ambiguous conversions
         template <typename Char>
-        VersionPartAtom(std::size_t numeral, std::basic_string<Char>&& literal);
+        VersionPartAtom(std::size_t numeral, std::basic_string<Char> literal);
 
-        auto numeral() const noexcept -> std::size_t;
-        auto literal() const& noexcept -> const std::string&;
+        [[nodiscard]] auto numeral() const noexcept -> std::size_t;
+        [[nodiscard]] auto literal() const& noexcept -> const std::string&;
         auto literal() && noexcept -> std::string;
 
-        auto str() const -> std::string;
+        [[nodiscard]] auto str() const -> std::string;
 
         auto operator==(const VersionPartAtom& other) const -> bool;
         auto operator!=(const VersionPartAtom& other) const -> bool;
@@ -55,7 +57,7 @@ namespace mamba::specs
         std::size_t m_numeral = 0;
     };
 
-    extern template VersionPartAtom::VersionPartAtom(std::size_t, std::string&&);
+    extern template VersionPartAtom::VersionPartAtom(std::size_t, std::string);
 
     /**
      * A sequence of VersionPartAtom meant to represent a part of a version (e.g. major, minor).
@@ -71,7 +73,7 @@ namespace mamba::specs
     /**
      * A sequence of VersionPart meant to represent all parts of a version.
      *
-     * CommonVersion are composed of an aribtrary postive number parts, such as major, minor.
+     * CommonVersion are composed of an arbitrary positive number parts, such as major, minor.
      * They are typically separated by dots, for instance the three parts in 3.0post1dev.4 are
      * {{3, ""}}, {{0, "post"}, {1, "dev"}}, and {{4, ""}}.
      *
@@ -83,7 +85,7 @@ namespace mamba::specs
     /**
      * A version according to Conda specifications.
      *
-     * A verison is composed of
+     * A version is composed of
      * - A epoch number, usually 0;
      * - A regular version,
      * - An optional local.
@@ -101,17 +103,33 @@ namespace mamba::specs
         static constexpr char part_delim_alt = '-';
         static constexpr char part_delim_special = '_';
 
-        static auto parse(std::string_view str) -> Version;
+        static auto parse(std::string_view str) -> expected_parse_t<Version>;
 
         /** Construct version ``0.0``. */
         Version() noexcept = default;
-        Version(std::size_t epoch, CommonVersion&& version, CommonVersion&& local = {}) noexcept;
+        Version(std::size_t epoch, CommonVersion version, CommonVersion local = {}) noexcept;
 
         [[nodiscard]] auto epoch() const noexcept -> std::size_t;
         [[nodiscard]] auto version() const noexcept -> const CommonVersion&;
         [[nodiscard]] auto local() const noexcept -> const CommonVersion&;
 
+        /**
+         * A string representation of the version.
+         *
+         * May not always be the same as the parsed string (due to reconstruction) but reparsing
+         * this string will give the same version.
+         * ``v == Version::parse(v.str())``.
+         */
         [[nodiscard]] auto str() const -> std::string;
+
+        /**
+         * A string truncated of extended representation of the version.
+         *
+         * Represent the string with the desired number of parts.
+         * If the actual number of parts is larger, then the string is truncated.
+         * If the actual number of parts is smalle, then the string is expanded with zeros.
+         */
+        [[nodiscard]] auto str(std::size_t level) const -> std::string;
 
         [[nodiscard]] auto operator==(const Version& other) const -> bool;
         [[nodiscard]] auto operator!=(const Version& other) const -> bool;
@@ -135,7 +153,7 @@ namespace mamba::specs
          *
          * For instance 1.3.1 is compatible with 1.2.1 at level 0 (first component `1 == 1``),
          * at level 1 (second component `` 3 >= 2``), but not at level two (because the second
-         * component is stricly larger ``3 > 2``).
+         * component is strictly larger ``3 > 2``).
          * Compatible versions are always smaller than the current version.
          */
         [[nodiscard]] auto compatible_with(const Version& older, std::size_t level) const -> bool;
@@ -157,73 +175,20 @@ namespace mamba::specs
 template <>
 struct fmt::formatter<mamba::specs::VersionPartAtom>
 {
-    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin())
-    {
-        // make sure that range is empty
-        if (ctx.begin() != ctx.end() && *ctx.begin() != '}')
-        {
-            throw fmt::format_error("Invalid format");
-        }
-        return ctx.begin();
-    }
+    auto parse(format_parse_context& ctx) -> decltype(ctx.begin());
 
-    template <class FormatContext>
-    auto format(const ::mamba::specs::VersionPartAtom atom, FormatContext& ctx)
-    {
-        return fmt::format_to(ctx.out(), "{}{}", atom.numeral(), atom.literal());
-    }
+    auto format(const ::mamba::specs::VersionPartAtom atom, format_context& ctx) const
+        -> decltype(ctx.out());
 };
 
 template <>
 struct fmt::formatter<mamba::specs::Version>
 {
-    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin())
-    {
-        // make sure that range is empty
-        if (ctx.begin() != ctx.end() && *ctx.begin() != '}')
-        {
-            throw fmt::format_error("Invalid format");
-        }
-        return ctx.begin();
-    }
+    std::optional<std::size_t> m_level;
 
-    template <class FormatContext>
-    auto format(const ::mamba::specs::Version v, FormatContext& ctx)
-    {
-        auto out = ctx.out();
-        if (v.epoch() != 0)
-        {
-            out = fmt::format_to(ctx.out(), "{}!", v.epoch());
-        }
+    auto parse(format_parse_context& ctx) -> decltype(ctx.begin());
 
-        auto format_version_to = [](auto l_out, const auto& version)
-        {
-            bool first = true;
-            for (const auto& part : version)
-            {
-                if (first)
-                {
-                    first = false;
-                }
-                else
-                {
-                    l_out = fmt::format_to(l_out, ".");
-                }
-                for (const auto& atom : part)
-                {
-                    l_out = fmt::format_to(l_out, "{}", atom);
-                }
-            }
-            return l_out;
-        };
-        out = format_version_to(out, v.version());
-        if (!v.local().empty())
-        {
-            out = fmt::format_to(out, "+");
-            out = format_version_to(out, v.local());
-        }
-        return out;
-    }
+    auto format(const ::mamba::specs::Version v, format_context& ctx) const -> decltype(ctx.out());
 };
 
 #endif

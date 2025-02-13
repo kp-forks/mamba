@@ -5,6 +5,7 @@
 // The full license is in the file LICENSE, distributed with this software.
 
 #include <cassert>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,7 @@
 #include <fmt/format.h>
 
 #include "mamba/util/build.hpp"
+#include "mamba/util/encoding.hpp"
 #include "mamba/util/path_manip.hpp"
 #include "mamba/util/string.hpp"
 #include "mamba/util/tuple_hash.hpp"
@@ -36,7 +38,7 @@ namespace mamba::util
          *
          * Never null, throw exception at construction if creating the handle fails.
          */
-        class CURLUrl
+        class CurlUrl
         {
         public:
 
@@ -45,29 +47,30 @@ namespace mamba::util
             using const_pointer = const value_type*;
             using flag_type = unsigned int;
 
-            CURLUrl();
-            CURLUrl(const std::string& url, flag_type flags = 0);
-            ~CURLUrl();
+            static auto parse(const std::string& url, flag_type flags = 0)
+                -> tl::expected<CurlUrl, URL::ParseError>;
 
-            CURLUrl(const CURLUrl&) = delete;
-            CURLUrl& operator=(const CURLUrl&) = delete;
-            CURLUrl(CURLUrl&&) = delete;
-            CURLUrl& operator=(CURLUrl&&) = delete;
+            CurlUrl();
 
-            [[nodiscard]] auto get_part(CURLUPart part, flag_type flags = 0) const
+            [[nodiscard]] auto get_part(::CURLUPart part, flag_type flags = 0) const
                 -> std::optional<std::string>;
 
         private:
 
-            pointer m_handle = nullptr;
+            struct CurlDeleter
+            {
+                void operator()(pointer ptr);
+            };
+
+            std::unique_ptr<value_type, CurlDeleter> m_handle = nullptr;
         };
 
         /**
          * A RAII wrapper for string mananged by CURL.
          *
-         * String can possibly be null, or zero-lenght, depending on the data returned by CURL.
+         * String can possibly be null, or zero-length, depending on the data returned by CURL.
          */
-        class CURLStr
+        class CurlStr
         {
             using value_type = char;
             using pointer = value_type*;
@@ -77,13 +80,13 @@ namespace mamba::util
 
         public:
 
-            explicit CURLStr() = default;
-            ~CURLStr();
+            explicit CurlStr() = default;
+            ~CurlStr();
 
-            CURLStr(const CURLStr&) = delete;
-            CURLStr& operator=(const CURLStr&) = delete;
-            CURLStr(CURLStr&&) = delete;
-            CURLStr& operator=(CURLStr&&) = delete;
+            CurlStr(const CurlStr&) = delete;
+            auto operator=(const CurlStr&) -> CurlStr& = delete;
+            CurlStr(CurlStr&&) = delete;
+            auto operator=(CurlStr&&) -> CurlStr& = delete;
 
             [[nodiscard]] auto raw_input() -> input_pointer;
 
@@ -96,36 +99,40 @@ namespace mamba::util
             size_type m_len = { -1 };
         };
 
-        CURLUrl::CURLUrl()
+        auto CurlUrl::parse(const std::string& url, flag_type flags)
+            -> tl::expected<CurlUrl, URL::ParseError>
         {
-            m_handle = ::curl_url();
-            if (m_handle == nullptr)
-            {
-                throw std::runtime_error("Could not create CURLU handle");
-            }
-        }
-
-        CURLUrl::CURLUrl(const std::string& url, flag_type flags)
-            : CURLUrl()
-        {
-            const CURLUcode uc = ::curl_url_set(m_handle, CURLUPART_URL, url.c_str(), flags);
+            auto out = CurlUrl();
+            const CURLUcode uc = ::curl_url_set(out.m_handle.get(), CURLUPART_URL, url.c_str(), flags);
             if (uc != CURLUE_OK)
             {
-                throw std::invalid_argument(
-                    fmt::format(R"(Failed to parse URL "{}": {})", url, ::curl_url_strerror(uc))
-                );
+                return tl::make_unexpected(URL::ParseError{
+                    fmt::format(R"(Failed to parse URL "{}": {})", url, ::curl_url_strerror(uc)) });
+            }
+            return { std::move(out) };
+        }
+
+        CurlUrl::CurlUrl()
+        {
+            m_handle.reset(::curl_url());
+            if (m_handle == nullptr)
+            {
+                throw std::runtime_error("Could not create CurlUrl handle");
             }
         }
 
-        CURLUrl::~CURLUrl()
+        void CurlUrl::CurlDeleter::operator()(pointer ptr)
         {
-            ::curl_url_cleanup(m_handle);
+            if (ptr)
+            {
+                ::curl_url_cleanup(ptr);
+            }
         }
 
-        auto CURLUrl::get_part(CURLUPart part, flag_type flags) const -> std::optional<std::string>
+        auto CurlUrl::get_part(CURLUPart part, flag_type flags) const -> std::optional<std::string>
         {
-            CURLStr scheme{};
-            const auto rc = ::curl_url_get(m_handle, part, scheme.raw_input(), flags);
+            CurlStr scheme{};
+            const auto rc = ::curl_url_get(m_handle.get(), part, scheme.raw_input(), flags);
             if (!rc)
             {
                 if (auto str = scheme.str())
@@ -136,7 +143,7 @@ namespace mamba::util
             return std::nullopt;
         }
 
-        CURLStr::~CURLStr()
+        CurlStr::~CurlStr()
         {
             // Even when Curl returns a len along side the data, `curl_free` must be used without
             // len.
@@ -144,13 +151,13 @@ namespace mamba::util
             m_data = nullptr;
         }
 
-        auto CURLStr::raw_input() -> input_pointer
+        auto CurlStr::raw_input() -> input_pointer
         {
             assert(m_data == nullptr);  // Otherwise we leak Curl memory
             return &m_data;
         }
 
-        auto CURLStr::str() const -> std::optional<std::string_view>
+        auto CurlStr::str() const -> std::optional<std::string_view>
         {
             if (m_data)
             {
@@ -167,32 +174,35 @@ namespace mamba::util
         }
     }
 
-    /*****************************
-     * URLHandler implementation *
-     *****************************/
+    /**********************
+     * URL implementation *
+     **********************/
 
-    auto URL::parse(std::string_view url) -> URL
+    auto URL::parse(std::string_view url) -> tl::expected<URL, ParseError>
     {
         url = util::rstrip(url);
-        auto out = URL();
-        if (!url.empty())
+        if (url.empty())
         {
-            // CURL fails to parse the URL if no scheme is given, unless CURLU_DEFAULT_SCHEME is
-            // given
-            const CURLUrl handle = {
-                file_uri_unc2_to_unc4(url),
-                CURLU_NON_SUPPORT_SCHEME | CURLU_DEFAULT_SCHEME,
-            };
-            out.set_scheme(handle.get_part(CURLUPART_SCHEME).value_or(""));
-            out.set_user(handle.get_part(CURLUPART_USER).value_or(""), Encode::no);
-            out.set_password(handle.get_part(CURLUPART_PASSWORD).value_or(""), Encode::no);
-            out.set_host(handle.get_part(CURLUPART_HOST).value_or(""), Encode::no);
-            out.set_path(handle.get_part(CURLUPART_PATH).value_or("/"), Encode::no);
-            out.set_port(handle.get_part(CURLUPART_PORT).value_or(""));
-            out.set_query(handle.get_part(CURLUPART_QUERY).value_or(""));
-            out.set_fragment(handle.get_part(CURLUPART_FRAGMENT).value_or(""));
+            return tl::make_unexpected(ParseError{ "Empty URL" });
         }
-        return out;
+        return CurlUrl::parse(file_uri_unc2_to_unc4(url), CURLU_NON_SUPPORT_SCHEME | CURLU_DEFAULT_SCHEME)
+            .transform(
+                [&](CurlUrl&& handle) -> URL
+                {
+                    auto out = URL();
+                    // CURL fails to parse the URL if no scheme is given, unless
+                    // CURLU_DEFAULT_SCHEME is given
+                    out.set_scheme(handle.get_part(CURLUPART_SCHEME).value_or(""));
+                    out.set_user(handle.get_part(CURLUPART_USER).value_or(""), Encode::no);
+                    out.set_password(handle.get_part(CURLUPART_PASSWORD).value_or(""), Encode::no);
+                    out.set_host(handle.get_part(CURLUPART_HOST).value_or(""), Encode::no);
+                    out.set_path(handle.get_part(CURLUPART_PATH).value_or("/"), Encode::no);
+                    out.set_port(handle.get_part(CURLUPART_PORT).value_or(""));
+                    out.set_query(handle.get_part(CURLUPART_QUERY).value_or(""));
+                    out.set_fragment(handle.get_part(CURLUPART_FRAGMENT).value_or(""));
+                    return out;
+                }
+            );
     }
 
     auto URL::scheme_is_defaulted() const -> bool
@@ -235,12 +245,12 @@ namespace mamba::util
 
     auto URL::user(Decode::yes_type) const -> std::string
     {
-        return url_decode(user(Decode::no));
+        return decode_percent(user(Decode::no));
     }
 
     void URL::set_user(std::string_view user, Encode::yes_type)
     {
-        return set_user(url_encode(user), Encode::no);
+        return set_user(encode_percent(user), Encode::no);
     }
 
     void URL::set_user(std::string user, Encode::no_type)
@@ -265,12 +275,12 @@ namespace mamba::util
 
     auto URL::password(Decode::yes_type) const -> std::string
     {
-        return url_decode(password(Decode::no));
+        return decode_percent(password(Decode::no));
     }
 
     void URL::set_password(std::string_view password, Encode::yes_type)
     {
-        return set_password(url_encode(password), Encode::no);
+        return set_password(encode_percent(password), Encode::no);
     }
 
     void URL::set_password(std::string password, Encode::no_type)
@@ -359,12 +369,12 @@ namespace mamba::util
 
     auto URL::host(Decode::yes_type) const -> std::string
     {
-        return url_decode(host(Decode::no));
+        return decode_percent(host(Decode::no));
     }
 
     void URL::set_host(std::string_view host, Encode::yes_type)
     {
-        return set_host(url_encode(host), Encode::no);
+        return set_host(encode_percent(host), Encode::no);
     }
 
     void URL::set_host(std::string host, Encode::no_type)
@@ -460,7 +470,7 @@ namespace mamba::util
 
     auto URL::path(Decode::yes_type) const -> std::string
     {
-        return url_decode(path(Decode::no));
+        return decode_percent(path(Decode::no));
     }
 
     void URL::set_path(std::string_view path, Encode::yes_type)
@@ -475,13 +485,13 @@ namespace mamba::util
                     concat(
                         slashes.empty() ? "/" : slashes,
                         no_slash_path.substr(0, 2),
-                        url_encode(no_slash_path.substr(2), '/')
+                        encode_percent(no_slash_path.substr(2), '/')
                     ),
                     Encode::no
                 );
             }
         }
-        return set_path(url_encode(path, '/'), Encode::no);
+        return set_path(encode_percent(path, '/'), Encode::no);
     }
 
     void URL::set_path(std::string path, Encode::no_type)
@@ -504,13 +514,13 @@ namespace mamba::util
         if (on_win && scheme() == "file")
         {
             assert(util::starts_with(m_path, '/'));
-            auto path_no_slash = url_decode(std::string_view(m_path).substr(1));
+            auto path_no_slash = decode_percent(std::string_view(m_path).substr(1));
             if (path_has_drive_letter(path_no_slash))
             {
                 return path_no_slash;
             }
         }
-        return url_decode(m_path);
+        return decode_percent(m_path);
     }
 
     void URL::append_path(std::string_view subpath, Encode::yes_type)
@@ -520,7 +530,7 @@ namespace mamba::util
             // Allow handling of Windows drive letter encoding
             return set_path(std::string(subpath), Encode::yes);
         }
-        return append_path(url_encode(subpath, '/'), Encode::no);
+        return append_path(encode_percent(subpath, '/'), Encode::no);
     }
 
     void URL::append_path(std::string_view subpath, Encode::no_type)

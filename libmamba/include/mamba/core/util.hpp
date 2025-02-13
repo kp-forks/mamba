@@ -99,7 +99,6 @@ namespace mamba
     //    result == must_persist && must_persist_temporary_directories() == must_persist
     bool set_persist_temporary_directories(bool will_persist);
 
-
     class TemporaryDirectory
     {
     public:
@@ -223,7 +222,7 @@ namespace mamba
     //          {
     //              print("locked file {}, locking counts: {}", some_path,
     //              lock.count_lock_owners()); // success might mean we are locking the same path
-    //              from multiple threads do_something(som_path); // locking was a success
+    //              from multiple threads do_something(some_path); // locking was a success
     //          }
     //          else // locking didnt succeed for some reason
     //          {
@@ -233,7 +232,7 @@ namespace mamba
     //              other reason, maybe a configuration option
     //          }
     //          some_more_work(some_path); // do this that the lock failed or not
-    //          return lock; // The locking ownership can be transfered to another function if
+    //          return lock; // The locking ownership can be transferred to another function if
     //          necessary
     //      }
     //
@@ -327,12 +326,7 @@ namespace mamba
         tl::expected<std::shared_ptr<LockFileOwner>, mamba_error> impl;
     };
 
-
     void split_package_extension(const std::string& file, std::string& name, std::string& extension);
-    fs::u8path strip_package_extension(const std::string& file);
-
-    tl::expected<std::string, mamba_error> encode_base64(std::string_view input);
-    tl::expected<std::string, mamba_error> decode_base64(std::string_view input);
 
     std::string
     quote_for_shell(const std::vector<std::string>& arguments, const std::string& shell = "");
@@ -367,7 +361,7 @@ namespace mamba
 
     struct WrappedCallOptions
     {
-        bool is_micromamba = false;
+        bool is_mamba_exe = false;
         bool dev_mode = false;
         bool debug_wrapper_scripts = false;
 

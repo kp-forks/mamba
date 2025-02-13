@@ -6,10 +6,10 @@
 
 #include "mamba/core/activation.hpp"
 #include "mamba/core/context.hpp"
-#include "mamba/core/environment.hpp"
 #include "mamba/core/output.hpp"
 #include "mamba/core/shell_init.hpp"
 #include "mamba/core/util.hpp"
+#include "mamba/core/util_os.hpp"
 #include "mamba/util/build.hpp"
 #include "mamba/util/environment.hpp"
 #include "mamba/util/string.hpp"
@@ -21,7 +21,7 @@ namespace mamba
         fs::u8path PREFIX_STATE_FILE = fs::u8path("conda-meta") / "state";
         fs::u8path PACKAGE_ENV_VARS_DIR = fs::u8path("etc") / "conda" / "env_vars.d";
         std::string CONDA_ENV_VARS_UNSET_VAR = "***unset***";  // NOLINT(runtime/string)
-    }                                                          // namespace
+    }  // namespace
 
     /****************************
      * Activator implementation *
@@ -29,7 +29,7 @@ namespace mamba
 
     Activator::Activator(const Context& context)
         : m_context(context)
-        , m_env(env::copy())
+        , m_env(util::get_env_map())
     {
     }
 
@@ -56,10 +56,10 @@ namespace mamba
         {
             return "base";
         }
-        // if ../miniconda3/envs/my_super_env, return `my_super_env`, else path
-        if (prefix.parent_path().stem() == "envs")
+        // if ../miniconda3/envs/my_super.env, return `my_super.env`, else path
+        if (prefix.parent_path().filename() == "envs")
         {
-            return prefix.stem().string();
+            return prefix.filename().string();
         }
         else
         {
@@ -208,33 +208,23 @@ namespace mamba
         }
     }
 
-    std::vector<fs::u8path> get_path_dirs(const fs::u8path& prefix)
-    {
-        if (util::on_win)
-        {
-            return { prefix,
-                     prefix / "Library" / "mingw-w64" / "bin",
-                     prefix / "Library" / "usr" / "bin",
-                     prefix / "Library" / "bin",
-                     prefix / "Scripts",
-                     prefix / "bin" };
-        }
-        else
-        {
-            return { prefix / "bin" };
-        }
-    }
-
     std::vector<fs::u8path> Activator::get_PATH()
     {
         std::vector<fs::u8path> path;
+        std::vector<std::string> strings{};
+
         if (m_env.find("PATH") != m_env.end())
         {
-            auto strings = util::split(m_env["PATH"], env::pathsep());
-            for (auto& s : strings)
-            {
-                path.push_back(s);
-            }
+            strings = util::split(m_env["PATH"], util::pathsep());
+        }
+        // On Windows, the variable can be Path and not PATH
+        else if (m_env.find("Path") != m_env.end())
+        {
+            strings = util::split(m_env["Path"], util::pathsep());
+        }
+        for (auto& s : strings)
+        {
+            path.push_back(s);
         }
         return path;
     }
@@ -264,11 +254,10 @@ namespace mamba
 
         // TODO check if path_conversion does something useful here.
         // path_list[0:0] = list(self.path_conversion(self._get_path_dirs(prefix)))
-        std::vector<fs::u8path> final_path = get_path_dirs(prefix);
+        std::vector<fs::u8path> final_path = util::get_path_dirs(prefix);
         final_path.insert(final_path.end(), path_list.begin(), path_list.end());
         final_path.erase(std::unique(final_path.begin(), final_path.end()), final_path.end());
-
-        std::string result = util::join(env::pathsep(), final_path).string();
+        std::string result = util::join(util::pathsep(), final_path).string();
         return result;
     }
 
@@ -279,7 +268,7 @@ namespace mamba
         std::vector<fs::u8path> current_path = get_PATH();
         assert(!old_prefix.empty());
 
-        std::vector<fs::u8path> old_prefix_dirs = get_path_dirs(old_prefix);
+        std::vector<fs::u8path> old_prefix_dirs = util::get_path_dirs(old_prefix);
 
         // remove all old paths
         std::vector<fs::u8path> cleaned_path;
@@ -306,12 +295,12 @@ namespace mamba
         std::vector<fs::u8path> final_path;
         if (!new_prefix.empty())
         {
-            final_path = get_path_dirs(new_prefix);
+            final_path = util::get_path_dirs(new_prefix);
             final_path.insert(final_path.end(), current_path.begin(), current_path.end());
 
             // remove duplicates
             final_path.erase(std::unique(final_path.begin(), final_path.end()), final_path.end());
-            std::string result = util::join(env::pathsep(), final_path).string();
+            std::string result = util::join(util::pathsep(), final_path).string();
             return result;
         }
         else
@@ -320,7 +309,7 @@ namespace mamba
                 std::unique(current_path.begin(), current_path.end()),
                 current_path.end()
             );
-            std::string result = util::join(env::pathsep(), current_path).string();
+            std::string result = util::join(util::pathsep(), current_path).string();
             return result;
         }
     }
@@ -354,6 +343,7 @@ namespace mamba
             }
         }
     }
+
     EnvironmentTransform Activator::build_reactivate()
     {
         std::string conda_prefix;
@@ -564,10 +554,14 @@ namespace mamba
         auto conda_environment_env_vars = get_environment_vars(prefix);
 
         // TODO check with conda if that's really what's supposed to happen ...
-        std::remove_if(
-            conda_environment_env_vars.begin(),
-            conda_environment_env_vars.end(),
-            [](auto& el) { return el.second == CONDA_ENV_VARS_UNSET_VAR; }
+        // TODO: C++20 replace by `std::erase_if`
+        conda_environment_env_vars.erase(
+            std::remove_if(
+                conda_environment_env_vars.begin(),
+                conda_environment_env_vars.end(),
+                [](auto& el) { return el.second == CONDA_ENV_VARS_UNSET_VAR; }
+            ),
+            conda_environment_env_vars.end()
         );
 
         std::vector<std::string> clobbering_env_vars;
@@ -713,7 +707,7 @@ namespace mamba
         auto has_prefix = util::get_env("CONDA_PREFIX");
         if (m_context.auto_activate_base && !has_prefix.has_value())
         {
-            builder << "micromamba activate base\n";
+            builder << get_self_exe_path().stem() << " activate base\n";
         }
         builder << hook_postamble() << "\n";
         return builder.str();
@@ -835,7 +829,7 @@ namespace mamba
 
     fs::u8path PosixActivator::hook_source_path()
     {
-        return m_context.prefix_params.root_prefix / "etc" / "profile.d" / "micromamba.sh";
+        return m_context.prefix_params.root_prefix / "etc" / "profile.d" / "mamba.sh";
     }
 
     /*********************************
@@ -911,7 +905,6 @@ namespace mamba
         return { "prompt", conda_prompt_modifier + prompt };
     }
 
-
     std::string CshActivator::shell_extension()
     {
         return ".csh";
@@ -934,9 +927,8 @@ namespace mamba
 
     fs::u8path CshActivator::hook_source_path()
     {
-        return m_context.prefix_params.root_prefix / "etc" / "profile.d" / "micromamba.csh";
+        return m_context.prefix_params.root_prefix / "etc" / "profile.d" / "mamba.csh";
     }
-
 
     std::string CmdExeActivator::shell_extension()
     {
@@ -1243,8 +1235,7 @@ namespace mamba
         return "";
     }
 
-    std::pair<std::string, std::string>
-    NuActivator::update_prompt(const std::string& conda_prompt_modifier)
+    std::pair<std::string, std::string> NuActivator::update_prompt(const std::string&)
     {
         // hook is implemented in shell_init.cpp as nushell behaves like a compiled language;
         // one cannot dynamically evaluate strings

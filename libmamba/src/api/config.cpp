@@ -7,14 +7,15 @@
 #include <iostream>
 
 #include "mamba/api/configuration.hpp"
-#include "mamba/core/environment.hpp"
-
+#include "mamba/util/path_manip.hpp"
 
 namespace mamba
 {
     void config_describe(Configuration& config)
     {
         config.at("use_target_prefix_fallback").set_value(true);
+        config.at("use_default_prefix_fallback").set_value(true);
+        config.at("use_root_prefix_fallback").set_value(true);
         config.at("target_prefix_checks")
             .set_value(
                 MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -38,6 +39,8 @@ namespace mamba
     void config_list(Configuration& config)
     {
         config.at("use_target_prefix_fallback").set_value(true);
+        config.at("use_default_prefix_fallback").set_value(true);
+        config.at("use_root_prefix_fallback").set_value(true);
         config.at("target_prefix_checks")
             .set_value(
                 MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -69,6 +72,8 @@ namespace mamba
     void config_sources(Configuration& config)
     {
         config.at("use_target_prefix_fallback").set_value(true);
+        config.at("use_default_prefix_fallback").set_value(true);
+        config.at("use_root_prefix_fallback").set_value(true);
         config.at("target_prefix_checks")
             .set_value(
                 MAMBA_ALLOW_EXISTING_PREFIX | MAMBA_ALLOW_MISSING_PREFIX
@@ -94,11 +99,11 @@ namespace mamba
                 auto found_s = std::find(valid_srcs.begin(), valid_srcs.end(), s);
                 if (found_s != valid_srcs.end())
                 {
-                    std::cout << env::shrink_user(s).string() << std::endl;
+                    std::cout << util::shrink_home(s.string()) << std::endl;
                 }
                 else
                 {
-                    std::cout << env::shrink_user(s).string() + " (invalid)" << std::endl;
+                    std::cout << util::shrink_home(s.string()) + " (invalid)" << std::endl;
                 }
             }
         }

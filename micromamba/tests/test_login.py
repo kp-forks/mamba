@@ -9,12 +9,15 @@ from xprocess import ProcessStarter
 from .helpers import create as umamba_create
 from .helpers import login, logout, random_string
 
-here = Path(__file__).absolute()
-pyserver = here.parent.parent / "test-server" / "reposerver.py"
-base_channel_directory = here.parent.parent / "test-server"
-channel_a_directory = base_channel_directory / "channel_a"
-channel_b_directory = base_channel_directory / "channel_b"
-channel_r_directory = base_channel_directory / "repo"
+
+__this_dir__ = Path(__file__).resolve().parent
+
+server_dir = __this_dir__ / "test-server"
+pyserver = server_dir / "reposerver.py"
+channel_a_directory = server_dir / "channel_a"
+channel_b_directory = server_dir / "channel_b"
+channel_r_directory = server_dir / "repo"
+
 print(pyserver)
 
 assert pyserver.exists()
@@ -209,9 +212,7 @@ env_file_content = """
 
 
 @pytest.mark.parametrize("user,password", [["testuser", "xyzpass"]])
-def test_basic_auth_explicit_txt(
-    auth_file, user, password, basic_auth_server, tmp_path
-):
+def test_basic_auth_explicit_txt(auth_file, user, password, basic_auth_server, tmp_path):
     login(basic_auth_server, "--username", user, "--password", password)
 
     env_file = tmp_path / "environment.txt"
@@ -224,9 +225,7 @@ def test_basic_auth_explicit_txt(
 
 
 @pytest.mark.parametrize("user,password", [["testuser", "xyzpass"]])
-def test_basic_auth_explicit_yaml(
-    auth_file, user, password, basic_auth_server, tmp_path
-):
+def test_basic_auth_explicit_yaml(auth_file, user, password, basic_auth_server, tmp_path):
     login(basic_auth_server, "--username", user, "--password", password)
 
     env_file = tmp_path / "environment.yml"

@@ -1,24 +1,22 @@
+// Copyright (c) 2023, QuantStack and Mamba Contributors
+//
+// Distributed under the terms of the BSD 3-Clause License.
+//
+// The full license is in the file LICENSE, distributed with this software.
 
 #include <atomic>
 #include <cassert>
 #include <mutex>
-#include <regex>
+
+#include "mamba/util/build.hpp"
 
 extern "C"
 {
 #include <curl/urlapi.h>
 }
 
-#include "mamba/api/configuration.hpp"
-#include "mamba/core/channel.hpp"
-#include "mamba/core/context.hpp"
 #include "mamba/core/execution.hpp"
 #include "mamba/core/output.hpp"
-#include "mamba/core/validate.hpp"
-#include "mamba/util/build.hpp"
-
-#include "spdlog/spdlog.h"
-
 
 namespace mamba
 {
@@ -33,7 +31,7 @@ namespace mamba
     // Other static objects from other translation units can be destroyed in parallel to the ones
     // here as C++ does not guarantee any order of destruction after `main()`.
 
-    //--- Dependencie's singletons
+    //--- Dependencies singletons
     //----------------------------------------------------------------------
 
 
@@ -108,7 +106,7 @@ namespace mamba
     static std::atomic<MainExecutor*> main_executor{ nullptr };
 
     static std::unique_ptr<MainExecutor> default_executor;
-    static std::mutex default_executor_mutex;  // TODO: replace by sychronized_value once available
+    static std::mutex default_executor_mutex;  // TODO: replace by synchronized_value once available
 
     MainExecutor& MainExecutor::instance()
     {
@@ -154,7 +152,7 @@ namespace mamba
 
     Console& Console::instance()
     {
-        if (!main_console)  // NOTE: this is a temptative check, not a perfect one, it is possible
+        if (!main_console)  // NOTE: this is a tentative check, not a perfect one, it is possible
                             // `main_console` becomes null after the if scope and before returning.
                             // A perfect check would involve locking a mutex, we want to avoid that
                             // here.
@@ -166,6 +164,11 @@ namespace mamba
         }
 
         return *main_console;
+    }
+
+    bool Console::is_available()
+    {
+        return main_console != nullptr;
     }
 
     void Console::set_singleton(Console& console)
@@ -181,5 +184,4 @@ namespace mamba
     {
         main_console = nullptr;
     }
-
 }

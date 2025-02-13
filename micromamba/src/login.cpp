@@ -8,12 +8,12 @@
 
 #include <CLI/App.hpp>
 
-#include "mamba/core/environment.hpp"
 #include "mamba/core/output.hpp"
 #include "mamba/core/util.hpp"
+#include "mamba/util/encoding.hpp"
+#include "mamba/util/environment.hpp"
 #include "mamba/util/string.hpp"
 #include "mamba/util/url.hpp"
-
 
 std::string
 read_stdin()
@@ -36,7 +36,7 @@ read_stdin()
 std::string
 get_token_base(const std::string& host)
 {
-    const auto url = mamba::util::URL::parse(host);
+    const auto url = mamba::util::URL::parse(host).value();
 
     std::string maybe_colon_and_port{};
     if (!url.port().empty())
@@ -55,7 +55,7 @@ void
 set_logout_command(CLI::App* subcom)
 {
     static std::string host;
-    subcom->add_option("host", host, "Host for the account");
+    subcom->add_option("host", host, "Host for the account")->option_text("HOST");
 
     static bool all;
     subcom->add_flag("--all", all, "Log out from all hosts");
@@ -63,7 +63,7 @@ set_logout_command(CLI::App* subcom)
     subcom->callback(
         []()
         {
-            static auto path = mamba::env::home_directory() / ".mamba" / "auth";
+            static auto path = mamba::fs::u8path(mamba::util::user_home_dir()) / ".mamba" / "auth";
             const mamba::fs::u8path auth_file = path / "authentication.json";
 
             if (all)
@@ -118,19 +118,21 @@ set_login_command(CLI::App* subcom)
     static bool pass_stdin = false;
     static bool token_stdin = false;
     static bool bearer_stdin = false;
-    subcom->add_option("-p,--password", pass, "Password for account");
-    subcom->add_option("-u,--username", user, "User name for the account");
-    subcom->add_option("-t,--token", token, "Token for the account");
-    subcom->add_option("-b,--bearer", bearer, "Bearer token for the account");
+    subcom->add_option("-p,--password", pass, "Password for account")->option_text("PASSWORD");
+    subcom->add_option("-u,--username", user, "User name for the account")->option_text("USERNAME");
+    subcom->add_option("-t,--token", token, "Token for the account")->option_text("TOKEN");
+    subcom->add_option("-b,--bearer", bearer, "Bearer token for the account")->option_text("BEARER");
     subcom->add_flag("--password-stdin", pass_stdin, "Read password from stdin");
     subcom->add_flag("--token-stdin", token_stdin, "Read token from stdin");
     subcom->add_flag("--bearer-stdin", bearer_stdin, "Read bearer token from stdin");
-    subcom->add_option(
-        "host",
-        host,
-        "Host for the account. The scheme (e.g. https://) is ignored\n"
-        "but not the port (optional) nor the channel (optional)."
-    );
+    subcom
+        ->add_option(
+            "host",
+            host,
+            "Host for the account. The scheme (e.g. https://) is ignored\n"
+            "but not the port (optional) nor the channel (optional)."
+        )
+        ->option_text("HOST");
 
     subcom->callback(
         []()
@@ -157,7 +159,8 @@ set_login_command(CLI::App* subcom)
                 bearer = read_stdin();
             }
 
-            static const auto path = mamba::env::home_directory() / ".mamba" / "auth";
+            static const auto path = mamba::fs::u8path(mamba::util::user_home_dir()) / ".mamba"
+                                     / "auth";
             mamba::fs::create_directories(path);
 
 
@@ -186,7 +189,7 @@ set_login_command(CLI::App* subcom)
                 {
                     auth_object["type"] = "BasicHTTPAuthentication";
 
-                    auto pass_encoded = mamba::encode_base64(mamba::util::strip(pass));
+                    auto pass_encoded = mamba::util::encode_base64(mamba::util::strip(pass));
                     if (!pass_encoded)
                     {
                         throw pass_encoded.error();

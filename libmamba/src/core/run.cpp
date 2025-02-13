@@ -26,21 +26,20 @@ extern "C"
 #include <fmt/color.h>
 #include <fmt/format.h>
 #include <fmt/ostream.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 #include <reproc++/run.hpp>
 #include <spdlog/spdlog.h>
 
 #include "mamba/core/context.hpp"
-#include "mamba/core/environment.hpp"
 #include "mamba/core/error_handling.hpp"
 #include "mamba/core/execution.hpp"
 #include "mamba/core/output.hpp"
 #include "mamba/core/run.hpp"
 #include "mamba/core/util_os.hpp"
-#include "mamba/core/util_random.hpp"
 #include "mamba/util/environment.hpp"
+#include "mamba/util/random.hpp"
 #include "mamba/util/string.hpp"
-
 
 namespace mamba
 {
@@ -71,7 +70,10 @@ namespace mamba
             if (!prefixes_bag.empty())
             {
                 // Pick a random prefix from our bag of prefixes.
-                const auto selected_prefix_idx = random_int<std::size_t>(0, prefixes_bag.size() - 1);
+                const auto selected_prefix_idx = util::random_int<std::size_t>(
+                    0,
+                    prefixes_bag.size() - 1
+                );
                 const auto selected_prefix_it = std::next(
                     prefixes_bag.begin(),
                     static_cast<std::ptrdiff_t>(selected_prefix_idx)
@@ -82,7 +84,7 @@ namespace mamba
             else if (!alt_names.empty())
             {
                 // No more prefixes: we retry the same prefixes but with a different program name.
-                const auto selected_name_idx = random_int<std::size_t>(0, alt_names.size() - 1);
+                const auto selected_name_idx = util::random_int<std::size_t>(0, alt_names.size() - 1);
                 const auto selected_name_it = std::next(
                     alt_names.begin(),
                     static_cast<std::ptrdiff_t>(selected_name_idx)
@@ -98,7 +100,7 @@ namespace mamba
                 // No prefixes left in the bag nor alternative names, just generate a random prefix
                 // as a fail-safe.
                 constexpr std::size_t arbitrary_prefix_length = 8;
-                selected_prefix = generate_random_alphanumeric_string(arbitrary_prefix_length);
+                selected_prefix = util::generate_random_alphanumeric_string(arbitrary_prefix_length);
                 selected_name = program_name;
             }
 
@@ -112,7 +114,7 @@ namespace mamba
 
     const fs::u8path& proc_dir()
     {
-        static auto path = env::user_cache_dir() / "proc";
+        static auto path = fs::u8path(util::user_cache_dir()) / "mamba" / "proc";
         return path;
     }
 
@@ -184,6 +186,13 @@ namespace mamba
         return !other_processes_with_same_name.empty();
     }
 
+// This ctor only uses proc_dir_lock in `assert()` expression
+// That's why it might get reported as unused in Release builds
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
+
     ScopedProcFile::ScopedProcFile(
         const Context& context,
         const std::string& name,
@@ -214,6 +223,10 @@ namespace mamba
         // TODO: add other info here if necessary
         pid_file << file_json;
     }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
     ScopedProcFile::~ScopedProcFile()
     {
@@ -330,6 +343,11 @@ namespace mamba
         reproc::options opt;
         if (cwd != "")
         {
+            if (!fs::exists(cwd))
+            {
+                LOG_CRITICAL << "The given path does not exist: " << cwd;
+                return -1;
+            }
             opt.working_directory = cwd.c_str();
         }
 

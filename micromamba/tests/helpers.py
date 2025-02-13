@@ -3,10 +3,10 @@ import json
 import os
 import platform
 import random
+import re
 import shutil
 import string
 import subprocess
-import sys
 from enum import Enum
 from pathlib import Path
 
@@ -17,9 +17,7 @@ import yaml
 def subprocess_run(*args: str, **kwargs) -> str:
     """Execute a command in a subprocess while properly capturing stderr in exceptions."""
     try:
-        p = subprocess.run(
-            args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, **kwargs
-        )
+        p = subprocess.run(args, capture_output=True, check=True, **kwargs)
     except subprocess.CalledProcessError as e:
         print(f"Command {args} failed with stderr: {e.stderr.decode()}")
         print(f"Command {args} failed with stdout: {e.stdout.decode()}")
@@ -36,9 +34,7 @@ class DryRun(Enum):
 use_offline = False
 channel = ["-c", "conda-forge"]
 dry_run_tests = DryRun(
-    os.environ["MAMBA_DRY_RUN_TESTS"]
-    if ("MAMBA_DRY_RUN_TESTS" in os.environ)
-    else "OFF"
+    os.environ["MAMBA_DRY_RUN_TESTS"] if ("MAMBA_DRY_RUN_TESTS" in os.environ) else "OFF"
 )
 
 MAMBA_NO_PREFIX_CHECK = 1 << 0
@@ -68,19 +64,18 @@ def get_umamba(cwd=os.getcwd()):
     if os.getenv("TEST_MAMBA_EXE"):
         umamba = os.getenv("TEST_MAMBA_EXE")
     else:
-        if platform.system() == "Windows":
-            umamba_bin = "micromamba.exe"
-        else:
-            umamba_bin = "micromamba"
-        umamba = os.path.join(cwd, "build", "micromamba", umamba_bin)
-    if not Path(umamba).exists():
-        print("MICROMAMBA NOT FOUND!")
+        raise RuntimeError("Mamba/Micromamba not found! Set TEST_MAMBA_EXE env variable")
     return umamba
 
 
 def random_string(n: int = 10) -> str:
     """Return random characters and digits."""
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=n))
+
+
+def remove_whitespaces(s: str) -> str:
+    """Return the input string with extra whitespaces removed."""
+    return re.sub(r"\s+", " ", s).strip()
 
 
 def shell(*args, cwd=os.getcwd(), **kwargs):
@@ -153,7 +148,7 @@ def install(*args, default_channel=True, no_rc=True, no_dry_run=False, **kwargs)
         try:
             j = json.loads(res)
             return j
-        except:
+        except Exception:
             print(res.decode())
             return
     if "--print-config-only" in args:
@@ -202,6 +197,28 @@ def create(
 def remove(*args, no_dry_run=False, **kwargs):
     umamba = get_umamba()
     cmd = [umamba, "remove", "-y"] + [arg for arg in args if arg]
+
+    if "--print-config-only" in args:
+        cmd += ["--debug"]
+    if (dry_run_tests == DryRun.DRY) and "--dry-run" not in args and not no_dry_run:
+        cmd += ["--dry-run"]
+
+    try:
+        res = subprocess_run(*cmd, **kwargs)
+        if "--json" in args:
+            j = json.loads(res)
+            return j
+        if "--print-config-only" in args:
+            return yaml.load(res, Loader=yaml.FullLoader)
+        return res.decode()
+    except subprocess.CalledProcessError as e:
+        print(f"Error when executing '{' '.join(cmd)}'")
+        raise (e)
+
+
+def uninstall(*args, no_dry_run=False, **kwargs):
+    umamba = get_umamba()
+    cmd = [umamba, "uninstall", "-y"] + [arg for arg in args if arg]
 
     if "--print-config-only" in args:
         cmd += ["--debug"]
@@ -369,7 +386,7 @@ def read_windows_registry(target_path):  # pragma: no cover
 
     try:
         key = winreg.OpenKey(main_key, subkey_str, 0, winreg.KEY_READ)
-    except EnvironmentError as e:
+    except OSError as e:
         if e.errno != errno.ENOENT:
             raise
         return None, None
@@ -397,7 +414,7 @@ def write_windows_registry(target_path, value_value, value_type):  # pragma: no 
     main_key = getattr(winreg, main_key)
     try:
         key = winreg.OpenKey(main_key, subkey_str, 0, winreg.KEY_WRITE)
-    except EnvironmentError as e:
+    except OSError as e:
         if e.errno != errno.ENOENT:
             raise
         key = winreg.CreateKey(main_key, subkey_str)

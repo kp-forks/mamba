@@ -7,21 +7,43 @@
 #ifndef MAMBA_API_UPDATE_HPP
 #define MAMBA_API_UPDATE_HPP
 
-#include <string>
-#include <vector>
-
-#include "mamba/core/query.hpp"
-#include "mamba/fs/filesystem.hpp"
-
-
 namespace mamba
 {
-    void update(
-        Configuration& config,
-        bool update_all = false,
-        bool prune_deps = false,
-        bool remove_not_specified = false
-    );
+    class Configuration;
+
+    enum class UpdateAll : bool
+    {
+        No = false,
+        Yes = true,
+    };
+
+    enum class PruneDeps : bool
+    {
+        No = false,
+        Yes = true,
+    };
+
+    enum class EnvUpdate : bool  // Specific to `env update` command
+    {
+        No = false,
+        Yes = true,
+    };
+
+    enum class RemoveNotSpecified : bool  // Specific to `env update` command
+    {
+        No = false,
+        Yes = true,
+    };
+
+    struct UpdateParams
+    {
+        UpdateAll update_all = UpdateAll::No;
+        PruneDeps prune_deps = PruneDeps::No;
+        EnvUpdate env_update = EnvUpdate::No;
+        RemoveNotSpecified remove_not_specified = RemoveNotSpecified::No;
+    };
+
+    void update(Configuration& config, const UpdateParams& update_params = {});
 }
 
 #endif

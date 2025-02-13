@@ -46,7 +46,6 @@ namespace mamba
         maybe_dump_backtrace(m_error_code);
     }
 
-
     mamba_error_code mamba_error::error_code() const noexcept
     {
         return m_error_code;
@@ -57,7 +56,7 @@ namespace mamba
         return m_data;
     }
 
-    constexpr const char* mamba_aggregated_error::m_base_message;  // = "Many errors occured:\n";
+    constexpr const char* mamba_aggregated_error::m_base_message;  // = "Many errors occurred:\n";
 
     mamba_aggregated_error::mamba_aggregated_error(error_list_t&& error_list)
         : base_type(mamba_aggregated_error::m_base_message, mamba_error_code::aggregated)
@@ -77,10 +76,15 @@ namespace mamba
                 m_aggregated_message += er.what();
                 m_aggregated_message += "\n";
             }
+
+            m_aggregated_message += "If you run into this error repeatedly, your package cache may be corrupted.\n"
+                                    "Please try running `mamba clean -a` to remove this cache before retrying the operation.\n"
+                                    "\n"
+                                    "If you still are having issues, please report the error on `mamba-org/mamba`'s issue tracker:\n"
+                                    "https://github.com/mamba-org/mamba/issues/new?assignees=&labels=&projects=&template=bug.yml";
         }
         return m_aggregated_message.c_str();
     }
-
 
     tl::unexpected<mamba_error> make_unexpected(const char* msg, mamba_error_code ec)
     {

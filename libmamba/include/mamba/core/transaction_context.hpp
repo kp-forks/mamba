@@ -11,11 +11,10 @@
 
 #include <reproc++/reproc.hpp>
 
+#include "mamba/core/context.hpp"
+#include "mamba/core/util.hpp"
 #include "mamba/fs/filesystem.hpp"
-
-#include "context.hpp"
-#include "match_spec.hpp"
-#include "util.hpp"
+#include "mamba/specs/match_spec.hpp"
 
 namespace mamba
 {
@@ -34,15 +33,17 @@ namespace mamba
     public:
 
         TransactionContext();
+        TransactionContext(TransactionContext&&) = default;
 
         explicit TransactionContext(const Context& context);
 
-        TransactionContext& operator=(const TransactionContext&);
+        TransactionContext& operator=(TransactionContext&&) = default;
+
         TransactionContext(
             const Context& context,
             const fs::u8path& target_prefix,
             const std::pair<std::string, std::string>& py_versions,
-            const std::vector<MatchSpec>& requested_specs
+            std::vector<specs::MatchSpec> requested_specs
         );
 
         TransactionContext(
@@ -50,7 +51,7 @@ namespace mamba
             const fs::u8path& target_prefix,
             const fs::u8path& relocate_prefix,
             const std::pair<std::string, std::string>& py_versions,
-            const std::vector<MatchSpec>& requested_specs
+            std::vector<specs::MatchSpec> requested_specs
         );
         ~TransactionContext();
         bool try_pyc_compilation(const std::vector<fs::u8path>& py_files);
@@ -69,8 +70,7 @@ namespace mamba
         bool always_softlink = false;
         bool compile_pyc = true;
         // this needs to be done when python version changes
-        bool relink_noarch = false;
-        std::vector<MatchSpec> requested_specs;
+        std::vector<specs::MatchSpec> requested_specs;
 
         const Context& context() const
         {

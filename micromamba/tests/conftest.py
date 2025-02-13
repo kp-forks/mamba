@@ -2,7 +2,8 @@ import copy
 import os
 import pathlib
 import platform
-from typing import Any, Generator, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Generator, Mapping
 
 import pytest
 
@@ -80,7 +81,7 @@ def tmp_home(
     if not request.config.getoption("--no-eager-clean"):
         try:
             helpers.rmtree(new_home)
-        # Silence possible cleanup exeptions on CI, weird things happening there
+        # Silence possible cleanup exceptions on CI, weird things happening there
         except Exception as e:
             if not on_ci:
                 raise e
@@ -93,9 +94,7 @@ def tmp_clean_env(tmp_environ: None) -> None:
         if k.startswith(("CONDA", "_CONDA", "MAMBA", "_MAMBA", "XDG_")):
             del os.environ[k]
 
-    def keep_in_path(
-        p: str, prefix: Optional[str] = tmp_environ.get("CONDA_PREFIX")
-    ) -> bool:
+    def keep_in_path(p: str, prefix: Optional[str] = tmp_environ.get("CONDA_PREFIX")) -> bool:
         if "condabin" in p:
             return False
         # On windows, PATH is also used for dyanamic libraries.
@@ -155,7 +154,7 @@ def tmp_root_prefix(
     if not request.config.getoption("--no-eager-clean"):
         try:
             helpers.rmtree(new_root_prefix)
-        # Silence possible cleanup exeptions on CI, weird things happening there
+        # Silence possible cleanup exceptions on CI, weird things happening there
         except Exception as e:
             if not on_ci:
                 raise e

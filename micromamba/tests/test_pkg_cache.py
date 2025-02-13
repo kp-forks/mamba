@@ -22,7 +22,7 @@ def find_cache_archive(cache: Path, pkg_name: str) -> Optional[Path]:
 
 
 def find_pkg_build(cache: Path, name: str) -> str:
-    """Find the build name of a package in the cache from the pacakge name."""
+    """Find the build name of a package in the cache from the package name."""
     matches = [p for p in cache.glob(f"{name}*") if p.is_dir()]
     assert len(matches) == 1
     return matches[0].name
@@ -85,9 +85,7 @@ def tmp_cache_xtensor_hpp(tmp_cache_xtensor_dir: Path) -> Path:
 
 
 class TestPkgCache:
-    def test_extracted_file_deleted(
-        self, tmp_home, tmp_cache_xtensor_hpp, tmp_root_prefix
-    ):
+    def test_extracted_file_deleted(self, tmp_home, tmp_cache_xtensor_hpp, tmp_root_prefix):
         old_ino = tmp_cache_xtensor_hpp.stat().st_ino
         os.remove(tmp_cache_xtensor_hpp)
 
@@ -232,17 +230,13 @@ class TestPkgCache:
 @pytest.fixture
 def tmp_cache_alt(tmp_root_prefix: Path, tmp_shared_cache_xtensor: Path) -> Path:
     """Make an alternative package cache outside the root prefix."""
-    cache = (
-        tmp_root_prefix / "more-pkgs"
-    )  # Creating under root prefix to leverage eager cleanup
+    cache = tmp_root_prefix / "more-pkgs"  # Creating under root prefix to leverage eager cleanup
     shutil.copytree(tmp_shared_cache_xtensor, cache, dirs_exist_ok=True)
     return cache
 
 
 def repodata_json(cache: Path) -> set[Path]:
-    return set((cache / "cache").glob("*.json")) - set(
-        (cache / "cache").glob("*.state.json")
-    )
+    return set((cache / "cache").glob("*.json")) - set((cache / "cache").glob("*.state.json"))
 
 
 def repodata_solv(cache: Path) -> set[Path]:
@@ -250,16 +244,17 @@ def repodata_solv(cache: Path) -> set[Path]:
 
 
 def same_repodata_json_solv(cache: Path):
-    return {p.stem for p in repodata_json(cache)} == {
-        p.stem for p in repodata_solv(cache)
-    }
+    return {p.stem for p in repodata_json(cache)} == {p.stem for p in repodata_solv(cache)}
 
 
 class TestMultiplePkgCaches:
-    @pytest.mark.parametrize(
-        "cache", (pytest.lazy_fixture(("tmp_cache", "tmp_cache_alt")))
-    )
-    def test_different_caches(self, tmp_home, tmp_root_prefix, cache):
+    @pytest.mark.parametrize("which_cache", ["tmp_cache", "tmp_cache_alt"])
+    def test_different_caches(
+        self, tmp_home, tmp_root_prefix, tmp_cache, tmp_cache_alt, which_cache
+    ):
+        # Test parametrization
+        cache = {"tmp_cache": tmp_cache, "tmp_cache_alt": tmp_cache_alt}[which_cache]
+
         os.environ["CONDA_PKGS_DIRS"] = f"{cache}"
         env_name = "some_env"
         res = helpers.create("-n", env_name, "xtensor", "-v", "--json", no_dry_run=True)
@@ -312,12 +307,8 @@ class TestMultiplePkgCaches:
 
         helpers.create("-n", "myenv", "xtensor", "--json", no_dry_run=True)
 
-    def test_no_writable_extracted_dir_corrupted(
-        self, tmp_home, tmp_root_prefix, tmp_cache
-    ):
-        (
-            tmp_cache / find_pkg_build(tmp_cache, "xtensor") / helpers.xtensor_hpp
-        ).unlink()
+    def test_no_writable_extracted_dir_corrupted(self, tmp_home, tmp_root_prefix, tmp_cache):
+        (tmp_cache / find_pkg_build(tmp_cache, "xtensor") / helpers.xtensor_hpp).unlink()
         helpers.recursive_chmod(tmp_cache, 0o500)
 
         os.environ["CONDA_PKGS_DIRS"] = f"{tmp_cache}"

@@ -1,8 +1,8 @@
 name: workspace
-description: 'A action to persist your workspace across different jobs'
+description: "A action to persist your workspace across different jobs"
 branding:
-  icon: 'box'
-  color: 'green'
+  icon: "box"
+  color: "green"
 inputs:
   action:
     required: true
@@ -18,7 +18,7 @@ inputs:
     required: true
     default: ${{ github.workflow }}-${{ github.run_id }}-${{ github.run_number }}-${{ github.sha }}
   key_suffix:
-    default: ''
+    default: ""
   token:
     required: false
     default: ${{ github.token }}
@@ -28,13 +28,13 @@ runs:
   steps:
     - name: Create workspace
       if: ${{ inputs.action == 'save' }}
-      uses: actions/cache/save@v3
+      uses: actions/cache/save@v4
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key_prefix }}-${{ inputs.key_base }}-${{ inputs.key_suffix }}
     - name: Restore workspace
       if: ${{ inputs.action == 'restore' }}
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v4
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.key_prefix }}-${{ inputs.key_base }}-${{ inputs.key_suffix }}

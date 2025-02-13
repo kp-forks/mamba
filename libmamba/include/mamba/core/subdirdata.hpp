@@ -12,21 +12,24 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "mamba/core/channel.hpp"
-#include "mamba/core/context.hpp"
-#include "mamba/core/download.hpp"
 #include "mamba/core/error_handling.hpp"
 #include "mamba/core/package_cache.hpp"
-#include "mamba/core/pool.hpp"
-#include "mamba/core/repo.hpp"
 #include "mamba/core/util.hpp"
+#include "mamba/download/downloader.hpp"
 #include "mamba/fs/filesystem.hpp"
 
 namespace mamba
 {
+    namespace specs
+    {
+        class Channel;
+    }
+
+    class Context;
+    class ChannelContext;
     class DownloadMonitor;
 
-    class MSubdirMetadata
+    class SubdirMetadata
     {
     public:
 
@@ -38,7 +41,7 @@ namespace mamba
             std::string cache_control;
         };
 
-        using expected_subdir_metadata = tl::expected<MSubdirMetadata, mamba_error>;
+        using expected_subdir_metadata = tl::expected<SubdirMetadata, mamba_error>;
 
         static expected_subdir_metadata read(const fs::u8path& file);
         void write(const fs::u8path& file);
@@ -84,8 +87,8 @@ namespace mamba
         friend void to_json(nlohmann::json& j, const CheckedAt& ca);
         friend void from_json(const nlohmann::json& j, CheckedAt& ca);
 
-        friend void to_json(nlohmann::json& j, const MSubdirMetadata& data);
-        friend void from_json(const nlohmann::json& j, MSubdirMetadata& data);
+        friend void to_json(nlohmann::json& j, const SubdirMetadata& data);
+        friend void from_json(const nlohmann::json& j, SubdirMetadata& data);
     };
 
     /**
@@ -93,66 +96,80 @@ namespace mamba
      * packages index. Handles downloading of the index
      * from the server and cache generation as well.
      */
-    class MSubdirData
+    class SubdirData
     {
     public:
 
-        static expected_t<MSubdirData> create(
+        static expected_t<SubdirData> create(
+            Context& ctx,
             ChannelContext& channel_context,
-            const Channel& channel,
+            const specs::Channel& channel,
             const std::string& platform,
-            const std::string& url,
             MultiPackageCache& caches,
             const std::string& repodata_fn = "repodata.json"
         );
 
-        ~MSubdirData() = default;
+        ~SubdirData() = default;
 
-        MSubdirData(const MSubdirData&) = delete;
-        MSubdirData& operator=(const MSubdirData&) = delete;
+        SubdirData(const SubdirData&) = delete;
+        SubdirData& operator=(const SubdirData&) = delete;
 
-        MSubdirData(MSubdirData&&) = default;
-        MSubdirData& operator=(MSubdirData&&) = default;
+        SubdirData(SubdirData&&) = default;
+        SubdirData& operator=(SubdirData&&) = default;
 
         bool is_noarch() const;
         bool is_loaded() const;
         void clear_cache();
 
         const std::string& name() const;
+        const std::string& channel_id() const;
+        const std::string& platform() const;
+
+        const SubdirMetadata& metadata() const;
+
+        expected_t<fs::u8path> valid_solv_cache() const;
+        fs::u8path writable_solv_cache() const;
+        expected_t<fs::u8path> valid_json_cache() const;
+
+        [[deprecated("since version 2.0 use ``valid_solv_cache`` or ``valid_json_cache`` instead")]]
         expected_t<std::string> cache_path() const;
 
         static expected_t<void> download_indexes(
-            std::vector<MSubdirData>& subdirs,
+            std::vector<SubdirData>& subdirs,
             const Context& context,
-            DownloadMonitor* check_monitor = nullptr,
-            DownloadMonitor* download_monitor = nullptr
+            download::Monitor* check_monitor = nullptr,
+            download::Monitor* download_monitor = nullptr
         );
-
-        expected_t<MRepo> create_repo(MPool& pool) const;
 
     private:
 
-        MSubdirData(
+        static std::string get_name(const std::string& channel_id, const std::string& platform);
+
+        SubdirData(
+            Context& ctx,
             ChannelContext& channel_context,
-            const Channel& channel,
+            const specs::Channel& channel,
             const std::string& platform,
-            const std::string& url,
             MultiPackageCache& caches,
             const std::string& repodata_fn = "repodata.json"
         );
 
-        void load(MultiPackageCache& caches, ChannelContext& channel_context, const Channel& channel);
-        void load_cache(MultiPackageCache& caches, ChannelContext& channel_context);
-        void update_metadata_zst(ChannelContext& context, const Channel& channel);
+        std::string repodata_url_path() const;
 
-        MultiDownloadRequest build_check_requests();
-        DownloadRequest build_index_request();
+        void
+        load(MultiPackageCache& caches, ChannelContext& channel_context, const specs::Channel& channel);
+        void load_cache(MultiPackageCache& caches);
+        void update_metadata_zst(ChannelContext& context, const specs::Channel& channel);
+
+        download::MultiRequest build_check_requests();
+        download::Request build_index_request();
 
         expected_t<void> use_existing_cache();
-        expected_t<void> finalize_transfer(MSubdirMetadata::HttpMetadata http_data);
+        expected_t<void> finalize_transfer(SubdirMetadata::HttpMetadata http_data);
         void refresh_last_write_time(const fs::u8path& json_file, const fs::u8path& solv_file);
 
         bool m_loaded = false;
+        bool m_forbid_cache = false;
         bool m_json_cache_valid = false;
         bool m_solv_cache_valid = false;
 
@@ -160,16 +177,20 @@ namespace mamba
         fs::u8path m_expired_cache_path;
         fs::u8path m_writable_pkgs_dir;
 
-        std::string m_repodata_url;
+        std::string m_channel_id;
+        std::string m_platform;
         std::string m_name;
+        std::string m_repodata_fn;
         std::string m_json_fn;
         std::string m_solv_fn;
         bool m_is_noarch;
 
-        MSubdirMetadata m_metadata;
+        SubdirMetadata m_metadata;
         std::unique_ptr<TemporaryFile> m_temp_file;
-        Context* p_context;
+        const Context* p_context;
     };
+
+    [[nodiscard]] std::string cache_name_from_url(std::string_view url);
 
     // Contrary to conda original function, this one expects a full url
     // (that is channel url + / + repodata_fn). It is not the

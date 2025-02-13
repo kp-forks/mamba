@@ -7,45 +7,66 @@
 #ifndef MAMBA_API_INSTALL_HPP
 #define MAMBA_API_INSTALL_HPP
 
+#include <iosfwd>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
-#include <solv/solver.h>
 #include <yaml-cpp/yaml.h>
 
-#include "mamba/core/context.hpp"
-#include "mamba/core/package_cache.hpp"
-#include "mamba/core/package_info.hpp"
-#include "mamba/core/pool.hpp"
-#include "mamba/core/repo.hpp"
-#include "mamba/core/solver.hpp"
 #include "mamba/fs/filesystem.hpp"
+#include "mamba/solver/request.hpp"
 
 namespace mamba
 {
+    class Context;
     class ChannelContext;
     class Configuration;
+    class PrefixData;
+    class MultiPackageCache;
+
+    namespace specs
+    {
+        class PackageInfo;
+    }
 
     void install(Configuration& config);
 
     void install_specs(
+        Context& ctx,
         ChannelContext& channel_context,
         const Configuration& config,
         const std::vector<std::string>& specs,
         bool create_env = false,
-        bool remove_prefix_on_failure = false,
-        int solver_flag = SOLVER_INSTALL,
-        int is_retry = 0
+        bool remove_prefix_on_failure = false
     );
 
+    auto create_install_request(  //
+        PrefixData& prefix_data,
+        std::vector<std::string> specs,
+        bool freeze_installed
+    ) -> solver::Request;
+
+    void add_pins_to_request(
+        solver::Request& request,
+        const Context& ctx,
+        PrefixData& prefix_data,
+        std::vector<std::string> specs,
+        bool no_pin,
+        bool no_py_pin
+    );
+
+    void print_request_pins_to(const solver::Request& request, std::ostream& out);
+
     void install_explicit_specs(
+        Context& ctx,
         ChannelContext& channel_context,
         const std::vector<std::string>& specs,
         bool create_env = false,
         bool remove_prefix_on_failure = false
     );
     void install_lockfile_specs(
+        Context& ctx,
         ChannelContext& channel_context,
         const std::string& lockfile_specs,
         const std::vector<std::string>& categories,
@@ -63,7 +84,8 @@ namespace mamba
 
         void channels_hook(Configuration& config, std::vector<std::string>& channels);
 
-        bool download_explicit(const std::vector<PackageInfo>& pkgs, MultiPackageCache& pkg_caches);
+        bool
+        download_explicit(const std::vector<specs::PackageInfo>& pkgs, MultiPackageCache& pkg_caches);
 
         struct other_pkg_mgr_spec
         {
@@ -84,9 +106,6 @@ namespace mamba
         bool eval_selector(const std::string& selector, const std::string& platform);
 
         yaml_file_contents read_yaml_file(fs::u8path yaml_file, const std::string platform);
-
-        std::tuple<std::vector<PackageInfo>, std::vector<MatchSpec>>
-        parse_urls_to_package_info(const std::vector<std::string>& urls, ChannelContext& channel_context);
 
         inline void to_json(nlohmann::json&, const other_pkg_mgr_spec&)
         {

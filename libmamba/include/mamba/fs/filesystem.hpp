@@ -12,25 +12,25 @@
 
 #include <fmt/format.h>
 
-//---- RATIONAL: Why do we wrap standard filesystem here? ----
+//---- RATIONALE: Why do we wrap standard filesystem here? ----
 // 1. This codebase relies on `std::string` and `const char*` to denote UTF-8 encoded text.
 //    However `std::filesystem::path` constructors cannot assume that `std::string` is in
 //    another encoding than the default one for the platform. This leads runtime issues on some
-//    platforms (mostly Windows) where unicode paths either lead to exceptions being thrown
-//    by standard filesystem functions or invalid unicode characters replacing the paths content.
+//    platforms (mostly Windows) where Unicode paths either lead to exceptions being thrown
+//    by standard filesystem functions or invalid Unicode characters replacing the paths' content.
 //    To work around these issues we need to make sure `std::string` and other characters are
-//    assumed to be UTF-8 and paths are built with that knowledge (the internal storage is optimal
-//    for the platform so it is not a concern). In the same way we need paths to be convertible
+//    assumed to be UTF-8 and paths are built with that knowledge. (The internal storage is optimal
+//    for the platform so it is not a concern.) In the same way we need paths to be convertible
 //    to UTF-8 when converting them to string.
 //    To achieve this we wrap a `std::filesystem::path` into our type `fs::u8path` so that
-//    converions always happen correctly in it's conversion functions, like an encoding barrier.
+//    conversions always happen correctly in its conversion functions, like an encoding barrier.
 //
 // 2. Once using `fs::u8path`, we cannot use the standard library filesystem algorithms even with
 //    `fs::u8path` implicit conversions without risking ending up with `std::filesystem::path` in
 //    code like this:
 //
 //        fs::u8path prefix = ...;
-//        prefix = rstrip(fs::weakly_canonical(env::expand_user(prefix)).string(), sep);
+//        prefix = rstrip(fs::weakly_canonical(util::expand_user(prefix)).string(), sep);
 //
 //    Here if `fs::weakly_canonical` is just an alias for `std::filesystem::weakly_canonical` it
 //    then returns a `std::filesystem::path` and we then call `.string()` on it. That conversion
@@ -51,7 +51,7 @@
 //    This kind of code seems valid but is silently broken. It is very easy to end up in this kind
 //    of situation which makes us consider this situation brittle. Therefore, the only way to
 //    prevent this kind of issue is to make sure every path value passed to and returned by
-//    filesystem functions is first converted to `fs::u8path`, thus giving use guarantees about
+//    filesystem functions is first converted to `fs::u8path`, thus giving us guarantees about
 //    encoding of our paths whatever the platform (as long as strings filtered to be UTF-8).
 //
 // 3. Previous versions of this header were using another library `ghc::filesystem` which is an
@@ -59,11 +59,11 @@
 //    `std::filesystem::path::string()` will always return UTF-8 encoding and that constructors
 //    taking strings will assume that they are UTF-8. Why did we prefer doing our own wrapping? The
 //    main reason we decided to wrap instead is that we want users of the library to be able to use
-//    the standard filesystem library in conjonction with this library. As `ghc::filesystem` is a
+//    the standard filesystem library in conjunction with this library. As `ghc::filesystem` is a
 //    re-implementation of `std::filesystem`, both cannot really be used together (or at least not
 //    without a lot of explicit conversions). With our present wrapping we are completely compatible
-//    with the standard library as we only add a thin encoding conversion layer over it's interface
-//    (at least until the stnadard library provide better options).
+//    with the standard library as we only add a thin encoding conversion layer over its interface
+//    (at least until the standard library provides better options).
 
 
 namespace mamba::fs
@@ -76,16 +76,19 @@ namespace mamba::fs
     // Maintain `\` on Windows, `/` on other platforms
     std::filesystem::path normalized_separators(std::filesystem::path path);
 
-    // Returns an utf-8 string given a standard path.
+    // Returns a UTF-8 string given a standard path.
     std::string to_utf8(const std::filesystem::path& path);
 
-    // Returns standard path given an utf-8 string.
+    // Returns standard path given a UTF-8 string.
     std::filesystem::path from_utf8(std::string_view u8string);
 
     // Same as std::filesystem::path except we only accept and output UTF-8 paths
     class u8path
     {
     public:
+
+        using value_type = char;
+        using string_type = std::basic_string<value_type>;
 
         u8path() = default;
 
@@ -295,34 +298,39 @@ namespace mamba::fs
             return *this;
         }
 
-
         //---- Conversions ----
 
-        // Returns an utf-8 string.
+        // Returns a UTF-8 string.
         std::string string() const
         {
             return to_utf8(m_path);
         }
 
-        // Returns an utf-8 string.
+        // Returns a default encoded string.
+        decltype(auto) native() const
+        {
+            return m_path.native();
+        }
+
+        // Returns a UTF-8 string.
         operator std::string() const
         {
             return this->string();
         }
 
-        // Returns the native wstring (UTF-16 on windows).
+        // Returns the native wstring (UTF-16 on Windows).
         std::wstring wstring() const
         {
             return m_path.wstring();
         }
 
-        // Implicitly convert to native wstring (UTF-16 on windows).
+        // Implicitly convert to native wstring (UTF-16 on Windows).
         operator std::wstring() const
         {
             return this->wstring();
         }
 
-        // Returns an utf-8 string using the ``/`` on all systems.
+        // Returns a UTF-8 string using the ``/`` on all systems.
         std::string generic_string() const
         {
             return to_utf8(m_path.generic_string());
@@ -518,7 +526,6 @@ namespace mamba::fs
         {
             return left.m_path != right;
         }
-
 
         //---- State ----
 
@@ -763,6 +770,7 @@ namespace mamba::fs
     {
         return iter;
     }
+
     inline directory_iterator end(directory_iterator) noexcept
     {
         return {};
@@ -793,9 +801,9 @@ namespace mamba::fs
         template <typename... OtherArgs>
         explicit recursive_directory_iterator(const u8path& path, OtherArgs&&... args)
             : std::filesystem::recursive_directory_iterator(
-                path.std_path(),
-                std::forward<OtherArgs>(args)...
-            )
+                  path.std_path(),
+                  std::forward<OtherArgs>(args)...
+              )
         {
         }
 
@@ -934,7 +942,6 @@ namespace mamba::fs
         return std::filesystem::create_directory(path, attributes, std::forward<OtherArgs>(args)...);
     }
 
-
     // void create_directory_symlink(const path& to, const path& new_symlink);
     // void create_directory_symlink(const path& to, const path& new_symlink, error_code& ec)
     // noexcept;
@@ -979,7 +986,6 @@ namespace mamba::fs
     {
         std::filesystem::current_path(path, std::forward<OtherArgs>(args)...);
     }
-
 
     // bool equivalent(const path& p1, const path& p2);
     // bool equivalent(const path& p1, const path& p2, error_code& ec) noexcept;
@@ -1365,7 +1371,7 @@ struct fmt::formatter<::mamba::fs::u8path>
     }
 
     template <class FormatContext>
-    auto format(const ::mamba::fs::u8path& path, FormatContext& ctx)
+    auto format(const ::mamba::fs::u8path& path, FormatContext& ctx) const
     {
         return fmt::format_to(ctx.out(), "'{}'", path.string());
     }

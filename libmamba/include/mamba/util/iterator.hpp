@@ -67,7 +67,6 @@ namespace mamba::util
         using difference_type = D;
         using iterator_category = std::bidirectional_iterator_tag;
 
-
         friend derived_type operator--(derived_type& d, int)
         {
             derived_type tmp(d);
@@ -216,7 +215,6 @@ namespace mamba::util
 
     template <class Predicate, class Iterator>
     using select_filter_iterator_base_t = typename select_filter_iterator_base<Predicate, Iterator>::type;
-
 
     template <class Predicate, class Iterator>
     class filter_iterator : public select_filter_iterator_base_t<Predicate, Iterator>
@@ -421,6 +419,16 @@ namespace mamba::util
             return m_last.value();
         }
 
+        const_iterator begin() const
+        {
+            return cbegin();
+        }
+
+        const_iterator end() const
+        {
+            return cend();
+        }
+
         const_iterator cbegin() const
         {
             build_cache(
@@ -456,6 +464,67 @@ namespace mamba::util
         mutable std::optional<const_iterator> m_const_first;
         mutable std::optional<const_iterator> m_const_last;
     };
+
+    /*************
+     * view::all *
+     *************/
+
+    namespace view
+    {
+        template <class Range>
+        class range_all
+        {
+        public:
+
+            using iterator = decltype(std::declval<Range>().begin());
+            using const_iterator = decltype(std::declval<Range>().cbegin());
+
+            explicit range_all(Range& range)
+                : m_range(range)
+            {
+            }
+
+            iterator begin()
+            {
+                return m_range.get().begin();
+            }
+
+            iterator end()
+            {
+                return m_range.get().end();
+            }
+
+            const_iterator begin() const
+            {
+                return cbegin();
+            }
+
+            const_iterator end() const
+            {
+                return cend();
+            }
+
+            const_iterator cbegin() const
+            {
+                return m_range.get().cbegin();
+            }
+
+            const_iterator cend() const
+            {
+                return m_range.get().cend();
+            }
+
+        private:
+
+            std::reference_wrapper<Range> m_range;
+        };
+
+        template <class R>
+        range_all<R> all(R& r)
+        {
+            return range_all<R>(r);
+        }
+    }
 }
 
 #endif

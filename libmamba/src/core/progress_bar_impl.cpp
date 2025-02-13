@@ -154,7 +154,7 @@ namespace cursor
 
 namespace mamba
 {
-    // TODO: bytes sould be size_t and the implementation is wrong
+    // TODO: bytes should be size_t and the implementation is wrong
     void to_human_readable_filesize(std::ostream& o, double bytes, std::size_t precision)
     {
         static constexpr const char* sizes[] = { " B", "kB", "MB", "GB", "TB", "PB" };
@@ -173,7 +173,6 @@ namespace mamba
         to_human_readable_filesize(o, bytes, precision);
         return o.str();
     }
-
 
     namespace
     {
@@ -756,7 +755,7 @@ namespace mamba
                                   + postfix.width() + elapsed.width() + 1;
 
         // Add extra whitespaces between fields (prefix, progress,
-        // and elasped fields are assumed always displayed)
+        // and elapsed fields are assumed always displayed)
         if (current)
         {
             total_width += 1;
@@ -837,7 +836,7 @@ namespace mamba
         }
 
         // Redistribute available space
-        // 1: start with the prefix if it was shrinked
+        // 1: start with the prefix if it was shrunk
         if (total_width < max_width && prefix && prefix.width() < prefix_min_width)
         {
             if ((max_width - total_width) < (prefix_min_width - prefix.width()))
@@ -1396,7 +1395,7 @@ namespace mamba
     {
         if (!m_is_spinner)
         {
-            auto seed = static_cast<std::size_t>(
+            auto seed = static_cast<typename std::default_random_engine::result_type>(
                 std::chrono::system_clock::now().time_since_epoch().count()
             );
             std::default_random_engine generator(seed);
@@ -1903,8 +1902,7 @@ namespace mamba
     {
         for (auto& [label, bars] : m_labels)
         {
-            std::size_t current = 0, total = 0, in_progress = 0, speed = 0, active_count = 0,
-                        total_count = 0;
+            std::size_t current = 0, total = 0, in_progress = 0, speed = 0;
             bool any_spinner = false;
             bool any_started = false;
             std::vector<ProgressBar::time_point_t> start_times = {};
@@ -1917,7 +1915,6 @@ namespace mamba
             {
                 current += bar->current();
                 total += bar->total();
-                ++total_count;
 
                 if (!bar->unset())
                 {
@@ -1927,7 +1924,6 @@ namespace mamba
                 {
                     speed += bar->speed();
                     in_progress += (bar->total() - bar->current());
-                    ++active_count;
                     aggregate_bar_ptr->add_active_task(bar->prefix());
                     any_started = true;
                 }

@@ -13,14 +13,6 @@
 
 namespace mamba::specs
 {
-    NLOHMANN_JSON_SERIALIZE_ENUM(
-        NoArchType,
-        {
-            { NoArchType::Generic, "generic" },
-            { NoArchType::Python, "python" },
-        }
-    )
-
     void to_json(nlohmann::json& j, const RepoDataPackage& p)
     {
         j["name"] = p.name;
@@ -50,7 +42,9 @@ namespace mamba::specs
         using mamba::util::deserialize_maybe_missing;
 
         p.name = j.at("name");
-        p.version = Version::parse(j.at("version").template get<std::string_view>());
+        p.version = Version::parse(j.at("version").template get<std::string_view>())
+                        .or_else([](ParseError&& error) { throw std::move(error); })
+                        .value();
         p.build_string = j.at("build");
         p.build_number = j.at("build_number");
         deserialize_maybe_missing(j, "subdir", p.subdir);
