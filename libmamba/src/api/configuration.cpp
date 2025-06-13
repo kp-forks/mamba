@@ -378,42 +378,6 @@ namespace mamba
      * hooks *
      *********/
 
-    static std::string expandvars(std::string s)
-    {
-        if (s.find("$") == std::string::npos)
-        {
-            // Bail out early
-            return s;
-        }
-        std::regex env_var_re(R"(\$(\{\w+\}|\w+))");
-        for (auto matches = std::sregex_iterator(s.begin(), s.end(), env_var_re);
-             matches != std::sregex_iterator();
-             ++matches)
-        {
-            std::smatch match = *matches;
-            auto var = match[0].str();
-            if (mamba::util::starts_with(var, "${"))
-            {
-                // strip ${ and }
-                var = var.substr(2, var.size() - 3);
-            }
-            else
-            {
-                // strip $
-                var = var.substr(1);
-            }
-            auto val = util::get_env(var);
-            if (val)
-            {
-                s.replace(match[0].first, match[0].second, val.value());
-                // It turns out to be unsafe to modify the string during
-                // sregex_iterator iteration. Start a new search by recursing.
-                return expandvars(s);
-            }
-        }
-        return s;
-    }
-
     namespace detail
     {
         void ssl_verify_hook(Configuration& config, std::string& value)
@@ -476,7 +440,8 @@ namespace mamba
                 for (const auto& dir : dirs)
                 {
                     const auto candidate = dir / name;
-                    if (fs::exists(candidate) && fs::is_directory(candidate))
+                    std::error_code _ec;
+                    if (fs::exists(candidate, _ec) && fs::is_directory(candidate))
                     {
                         return candidate;
                     }
@@ -1026,14 +991,19 @@ namespace mamba
                 dirs.insert(dirs.begin(), paths.rbegin(), paths.rend());
             }
 
+            std::error_code ec;
             // Check that the values exist as directories
             for (auto& d : dirs)
             {
-                d = fs::weakly_canonical(util::expand_home(d.string())).string();
-                if (fs::exists(d) && !fs::is_directory(d))
+                auto canonical_dir = fs::weakly_canonical(util::expand_home(d.string()), ec).string();
+                if (!ec)
                 {
-                    LOG_ERROR << "Env dir specified is not a directory: " << d.string();
-                    throw std::runtime_error("Aborting.");
+                    d = std::move(canonical_dir);
+                    if (fs::exists(d) && !fs::is_directory(d))
+                    {
+                        LOG_ERROR << "Env dir specified is not a directory: " << d.string();
+                        throw std::runtime_error("Aborting.");
+                    }
                 }
             }
 
